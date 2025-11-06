@@ -24,4 +24,12 @@
 # Go workspace file
 go.work
 
+# Custom - Sensitive files
+.env
+logs/
+*.log
+harga_emas.json
+update_gold_prices.sql
+update_gold_prices_historical.sql
+
 # End of https://www.toptal.com/developers/gitignore/api/go

@@ -38,6 +38,24 @@ func cleanPrice(s string) string {
 	return s
 }
 
+// showLoadingAnimation menampilkan animasi loading dengan spinner dan elapsed time
+func showLoadingAnimation(done chan bool, startTime time.Time) {
+	spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	i := 0
+	for {
+		select {
+		case <-done:
+			fmt.Print("\r\033[K") // Clear the line
+			return
+		default:
+			elapsed := time.Since(startTime).Seconds()
+			fmt.Printf("\r   %s Memuat halaman... (%.1fs)", spinner[i%len(spinner)], elapsed)
+			i++
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+}
+
 // fetchRenderedHTML menggunakan chromedp untuk mengambil HTML yang sudah di-render oleh JavaScript
 func fetchRenderedHTML(url string) (string, error) {
 	// Buat context dengan timeout yang lebih lama
@@ -58,6 +76,11 @@ func fetchRenderedHTML(url string) (string, error) {
 
 	var htmlContent string
 
+	// Start loading animation
+	loadingStart := time.Now()
+	done := make(chan bool)
+	go showLoadingAnimation(done, loadingStart)
+
 	// Jalankan chromedp tasks
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(url),
@@ -66,6 +89,10 @@ func fetchRenderedHTML(url string) (string, error) {
 		// Ambil HTML yang sudah di-render
 		chromedp.OuterHTML(`html`, &htmlContent, chromedp.ByQuery),
 	)
+
+	// Stop loading animation
+	done <- true
+	time.Sleep(200 * time.Millisecond) // Wait a bit to ensure spinner is cleared
 
 	if err != nil {
 		return "", fmt.Errorf("chromedp error: %v", err)
@@ -77,6 +104,8 @@ func fetchRenderedHTML(url string) (string, error) {
 // generateSQL membuat SQL UPDATE queries dari data JSON
 func generateSQL(allBrandsData []BrandData) error {
 	today := time.Now().Format("2006-01-02")
+	now := time.Now()
+	generatedTime := now.Format("2006-01-02 15:04:05")
 
 	fmt.Println("\n🔄 Membuat SQL UPDATE queries...")
 	
@@ -88,7 +117,7 @@ func generateSQL(allBrandsData []BrandData) error {
 	}
 	defer sqlFile.Close()
 
-	sqlContent := fmt.Sprintf("-- SQL UPDATE Queries untuk Gold Prices\n-- Generated on: %s\n\n", today)
+	sqlContent := fmt.Sprintf("-- SQL UPDATE Queries untuk Gold Prices\n-- Generated on: %s\n\n", generatedTime)
 
 	for _, brandData := range allBrandsData {
 		brand := brandData.Brand
@@ -97,8 +126,6 @@ func generateSQL(allBrandsData []BrandData) error {
 		switch brand {
 		case "GALERI 24":
 			brandSQL = "Galeri24"
-		case "BABY GALERI 24":
-			brandSQL = "BabyGaleri24"
 		case "ANTAM":
 			brandSQL = "Antam"
 		case "UBS":
@@ -124,7 +151,7 @@ func generateSQL(allBrandsData []BrandData) error {
 				continue
 			}
 
-			sqlContent += fmt.Sprintf("UPDATE public.gold_prices_v2\n")
+			sqlContent += fmt.Sprintf("UPDATE public.gold_prices_v3\n")
 			sqlContent += fmt.Sprintf("SET price_buyback=%.1f, price_sell=%.0f\n", priceBuyback, priceSell)
 			sqlContent += fmt.Sprintf("WHERE \"date\"='%s' AND brand='%s' AND denom=%.1f;\n\n", today, brandSQL, denom)
 			queryCount++
@@ -140,20 +167,20 @@ func generateSQL(allBrandsData []BrandData) error {
 	}
 
 	fmt.Printf("✅ %d SQL queries berhasil dibuat dan disimpan ke update_gold_prices.sql\n", queryCount)
-	fmt.Println("\n--- Preview SQL Queries ---")
+	// fmt.Println("\n--- Preview SQL Queries ---")
 	
-	// Tampilkan beberapa baris pertama
-	lines := strings.Split(sqlContent, "\n")
-	previewLines := 20
-	if len(lines) < previewLines {
-		previewLines = len(lines)
-	}
-	for i := 0; i < previewLines; i++ {
-		fmt.Println(lines[i])
-	}
-	if len(lines) > previewLines {
-		fmt.Printf("... dan %d baris lainnya\n", len(lines)-previewLines)
-	}
+	// // Tampilkan beberapa baris pertama
+	// lines := strings.Split(sqlContent, "\n")
+	// previewLines := 20
+	// if len(lines) < previewLines {
+	// 	previewLines = len(lines)
+	// }
+	// for i := 0; i < previewLines; i++ {
+	// 	fmt.Println(lines[i])
+	// }
+	// if len(lines) > previewLines {
+	// 	fmt.Printf("... dan %d baris lainnya\n", len(lines)-previewLines)
+	// }
 
 	return nil
 }
@@ -277,8 +304,8 @@ func main() {
 
 	stepDuration = time.Since(stepStart)
 	fmt.Printf("✅ Data harga emas berhasil disimpan ke harga_emas.json (%.2f detik)\n", stepDuration.Seconds())
-	fmt.Println("\n--- Tampilan Hasil JSON ---")
-	fmt.Println(string(jsonData))
+	// fmt.Println("\n--- Tampilan Hasil JSON ---")
+	// fmt.Println(string(jsonData))
 
 	// 5. Generate SQL queries
 	stepStart = time.Now()
