@@ -175,7 +175,7 @@ func main() {
 	fmt.Println("✅ Koneksi berhasil!")
 
 	// Eksekusi SQL file
-	sqlFile := "update_gold_prices.sql"
+	sqlFile := "../sql/update_gold_prices.sql"
 	
 	if _, err := os.Stat(sqlFile); os.IsNotExist(err) {
 		log.Fatalf("❌ File %s tidak ditemukan", sqlFile)

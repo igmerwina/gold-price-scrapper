@@ -60,7 +60,9 @@ go run execute_sql.go
 ./run_scraper.sh
 ```
 
-## 📊 Yang Terjadi Setiap Hari Jam 8:10 Pagi
+## 📊 Yang Terjadi Setiap Hari (Otomatis via Cron)
+
+**Default: Jam 8:10 pagi** (bisa diubah di `.env`)
 
 ```mermaid
 graph LR
@@ -72,10 +74,26 @@ graph LR
 ```
 
 1. ✅ Scrape harga emas dari website
-2. ✅ Generate `harga_emas.json`
-3. ✅ Generate `update_gold_prices.sql`
+2. ✅ Generate `sql/harga_emas.json`
+3. ✅ Generate `sql/update_gold_prices.sql`
 4. ✅ Execute SQL ke Supabase
 5. ✅ Save logs ke `logs/scraper_YYYYMMDD_HHMMSS.log`
+
+### ⏰ Ubah Jadwal Cron
+
+Edit file `.env` dan ubah `CRON_SCHEDULE`:
+```bash
+# Contoh jadwal:
+CRON_SCHEDULE=10 8 * * *        # Setiap hari jam 8:10 pagi
+CRON_SCHEDULE=0 */4 * * *       # Setiap 4 jam
+CRON_SCHEDULE=30 9,15 * * *     # Jam 9:30 dan 15:30
+CRON_SCHEDULE=0 8 * * 1-5       # Jam 8 pagi Senin-Jumat
+```
+
+Lalu update cron:
+```bash
+./manage_cron.sh install
+```
 
 ## 📝 File Penting
 
@@ -84,8 +102,32 @@ graph LR
 | `scrapper.go` | Web scraper utama |
 | `execute_sql.go` | Eksekusi SQL ke Supabase |
 | `run_scraper.sh` | Script automation |
-| `.env` | Database credentials (**JANGAN COMMIT!**) |
+| `manage_cron.sh` | Manage cron jobs |
+| `.env` | Config & credentials (**JANGAN COMMIT!**) |
 | `logs/` | Folder untuk log files |
+| `sql/` | Folder untuk output JSON & SQL |
+
+## 🔧 Cron Management
+
+### Install cron job:
+```bash
+./manage_cron.sh install
+```
+
+### Check status:
+```bash
+./manage_cron.sh status
+```
+
+### Remove cron job:
+```bash
+./manage_cron.sh remove
+```
+
+### List all commands:
+```bash
+./manage_cron.sh help
+```
 
 ## 🔍 Monitoring
 
@@ -96,6 +138,8 @@ tail -f logs/scraper_*.log
 
 ### List semua cron jobs:
 ```bash
+./manage_cron.sh list
+# atau
 crontab -l
 ```
 

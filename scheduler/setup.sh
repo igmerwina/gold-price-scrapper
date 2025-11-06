@@ -25,7 +25,8 @@ fi
 # Test .env file
 echo ""
 echo "🔍 Validasi .env file..."
-source .env
+# Export variables safely (skip comments and empty lines)
+export $(grep -v '^#' .env | grep -v '^$' | xargs)
 
 if [ -z "$SUPABASE_HOST" ] || [ -z "$SUPABASE_PASSWORD" ]; then
     echo "❌ Error: SUPABASE_HOST atau SUPABASE_PASSWORD belum diset!"
@@ -39,10 +40,18 @@ echo "   User: $SUPABASE_USER"
 echo ""
 
 # Setup cron
-echo "⏰ Setup Cron Job (jam 8:10 pagi setiap hari)"
+if [ -z "$CRON_SCHEDULE" ]; then
+    CRON_SCHEDULE="10 8 * * *"
+    CRON_DESCRIPTION="Setiap hari jam 8:10 pagi"
+fi
+
+echo "⏰ Setup Cron Job"
 echo ""
+echo "Jadwal: $CRON_DESCRIPTION"
 echo "Cron line yang akan ditambahkan:"
-echo "10 8 * * * $(pwd)/run_scraper.sh"
+echo "$CRON_SCHEDULE $(pwd)/run_scraper.sh"
+echo ""
+echo "💡 Tip: Ubah jadwal di file .env (CRON_SCHEDULE)"
 echo ""
 read -p "Tambahkan ke crontab? (y/n): " -n 1 -r
 echo ""
@@ -52,7 +61,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     crontab -l > /tmp/crontab_backup_$(date +%Y%m%d_%H%M%S).txt 2>/dev/null
     
     # Add new cron job (check if not exists)
-    (crontab -l 2>/dev/null | grep -v "run_scraper.sh"; echo "25 16 * * * $(pwd)/run_scraper.sh") | crontab -
+    (crontab -l 2>/dev/null | grep -v "run_scraper.sh"; echo "$CRON_SCHEDULE $(pwd)/run_scraper.sh") | crontab -
     
     echo "✅ Cron job ditambahkan!"
     echo ""
@@ -65,7 +74,7 @@ else
     echo "  crontab -e"
     echo ""
     echo "Lalu tambahkan baris ini:"
-    echo "  10 8 * * * $(pwd)/run_scraper.sh"
+    echo "  $CRON_SCHEDULE $(pwd)/run_scraper.sh"
 fi
 
 echo ""

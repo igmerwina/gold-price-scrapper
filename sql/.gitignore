@@ -1,0 +1,9 @@
+# Ignore all JSON and SQL files (generated output)
+*.json
+*.sql
+
+# Keep this .gitignore file
+!.gitignore
+
+# Keep README if exists
+!README.md

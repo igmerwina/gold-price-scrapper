@@ -28,9 +28,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Copy hasil scraper ke folder scheduler
-cp harga_emas.json ../scheduler/
-cp update_gold_prices.sql ../scheduler/
+# File sudah otomatis tersimpan di folder sql/
 
 # 2. Eksekusi SQL ke Supabase
 echo "" | tee -a ../$LOG_FILE
