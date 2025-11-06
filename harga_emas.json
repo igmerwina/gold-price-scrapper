@@ -1,5 +1,50 @@
 [
   {
+    "brand": "UBS",
+    "data": [
+      {
+        "berat": "0.5",
+        "harga_jual": "1276000",
+        "harga_buyback": "1099000"
+      },
+      {
+        "berat": "1",
+        "harga_jual": "2360000",
+        "harga_buyback": "2199000"
+      },
+      {
+        "berat": "2",
+        "harga_jual": "4683000",
+        "harga_buyback": "4399000"
+      },
+      {
+        "berat": "5",
+        "harga_jual": "11572000",
+        "harga_buyback": "10999000"
+      },
+      {
+        "berat": "10",
+        "harga_jual": "23022000",
+        "harga_buyback": "21999000"
+      },
+      {
+        "berat": "25",
+        "harga_jual": "57441000",
+        "harga_buyback": "54729000"
+      },
+      {
+        "berat": "50",
+        "harga_jual": "114648000",
+        "harga_buyback": "109459000"
+      },
+      {
+        "berat": "100",
+        "harga_jual": "229204000",
+        "harga_buyback": "218919000"
+      }
+    ]
+  },
+  {
     "brand": "GALERI 24",
     "data": [
       {
@@ -85,51 +130,6 @@
       {
         "berat": "100",
         "harga_jual": "242234000",
-        "harga_buyback": "218919000"
-      }
-    ]
-  },
-  {
-    "brand": "UBS",
-    "data": [
-      {
-        "berat": "0.5",
-        "harga_jual": "1276000",
-        "harga_buyback": "1099000"
-      },
-      {
-        "berat": "1",
-        "harga_jual": "2360000",
-        "harga_buyback": "2199000"
-      },
-      {
-        "berat": "2",
-        "harga_jual": "4683000",
-        "harga_buyback": "4399000"
-      },
-      {
-        "berat": "5",
-        "harga_jual": "11572000",
-        "harga_buyback": "10999000"
-      },
-      {
-        "berat": "10",
-        "harga_jual": "23022000",
-        "harga_buyback": "21999000"
-      },
-      {
-        "berat": "25",
-        "harga_jual": "57441000",
-        "harga_buyback": "54729000"
-      },
-      {
-        "berat": "50",
-        "harga_jual": "114648000",
-        "harga_buyback": "109459000"
-      },
-      {
-        "berat": "100",
-        "harga_jual": "229204000",
         "harga_buyback": "218919000"
       }
     ]

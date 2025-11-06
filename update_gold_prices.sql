@@ -2,6 +2,38 @@
 -- Generated on: 2025-11-06
 
 UPDATE public.gold_prices_v2
+SET price_buyback=1099000.0, price_sell=1276000
+WHERE "date"='2025-11-06' AND brand='UBS' AND denom=0.5;
+
+UPDATE public.gold_prices_v2
+SET price_buyback=2199000.0, price_sell=2360000
+WHERE "date"='2025-11-06' AND brand='UBS' AND denom=1.0;
+
+UPDATE public.gold_prices_v2
+SET price_buyback=4399000.0, price_sell=4683000
+WHERE "date"='2025-11-06' AND brand='UBS' AND denom=2.0;
+
+UPDATE public.gold_prices_v2
+SET price_buyback=10999000.0, price_sell=11572000
+WHERE "date"='2025-11-06' AND brand='UBS' AND denom=5.0;
+
+UPDATE public.gold_prices_v2
+SET price_buyback=21999000.0, price_sell=23022000
+WHERE "date"='2025-11-06' AND brand='UBS' AND denom=10.0;
+
+UPDATE public.gold_prices_v2
+SET price_buyback=54729000.0, price_sell=57441000
+WHERE "date"='2025-11-06' AND brand='UBS' AND denom=25.0;
+
+UPDATE public.gold_prices_v2
+SET price_buyback=109459000.0, price_sell=114648000
+WHERE "date"='2025-11-06' AND brand='UBS' AND denom=50.0;
+
+UPDATE public.gold_prices_v2
+SET price_buyback=218919000.0, price_sell=229204000
+WHERE "date"='2025-11-06' AND brand='UBS' AND denom=100.0;
+
+UPDATE public.gold_prices_v2
 SET price_buyback=1101000.0, price_sell=1237000
 WHERE "date"='2025-11-06' AND brand='Galeri24' AND denom=0.5;
 
@@ -65,36 +97,4 @@ UPDATE public.gold_prices_v2
 SET price_buyback=218919000.0, price_sell=242234000
 WHERE "date"='2025-11-06' AND brand='Antam' AND denom=100.0;
 
-UPDATE public.gold_prices_v2
-SET price_buyback=1099000.0, price_sell=1276000
-WHERE "date"='2025-11-06' AND brand='UBS' AND denom=0.5;
-
-UPDATE public.gold_prices_v2
-SET price_buyback=2199000.0, price_sell=2360000
-WHERE "date"='2025-11-06' AND brand='UBS' AND denom=1.0;
-
-UPDATE public.gold_prices_v2
-SET price_buyback=4399000.0, price_sell=4683000
-WHERE "date"='2025-11-06' AND brand='UBS' AND denom=2.0;
-
-UPDATE public.gold_prices_v2
-SET price_buyback=10999000.0, price_sell=11572000
-WHERE "date"='2025-11-06' AND brand='UBS' AND denom=5.0;
-
-UPDATE public.gold_prices_v2
-SET price_buyback=21999000.0, price_sell=23022000
-WHERE "date"='2025-11-06' AND brand='UBS' AND denom=10.0;
-
-UPDATE public.gold_prices_v2
-SET price_buyback=54729000.0, price_sell=57441000
-WHERE "date"='2025-11-06' AND brand='UBS' AND denom=25.0;
-
-UPDATE public.gold_prices_v2
-SET price_buyback=109459000.0, price_sell=114648000
-WHERE "date"='2025-11-06' AND brand='UBS' AND denom=50.0;
-
-UPDATE public.gold_prices_v2
-SET price_buyback=218919000.0, price_sell=229204000
-WHERE "date"='2025-11-06' AND brand='UBS' AND denom=100.0;
-
--- Total queries generated successfully
+-- Total 24 queries generated successfully

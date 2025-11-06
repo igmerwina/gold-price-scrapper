@@ -78,8 +78,9 @@ func fetchRenderedHTML(url string) (string, error) {
 func generateSQL(allBrandsData []BrandData) error {
 	today := time.Now().Format("2006-01-02")
 
-	fmt.Println("\n🔄 Generating SQL UPDATE queries...")
+	fmt.Println("\n🔄 Membuat SQL UPDATE queries...")
 	
+	queryCount := 0
 	// Buka file untuk menulis SQL
 	sqlFile, err := ioutil.TempFile("", "sql_*.txt")
 	if err != nil {
@@ -126,10 +127,11 @@ func generateSQL(allBrandsData []BrandData) error {
 			sqlContent += fmt.Sprintf("UPDATE public.gold_prices_v2\n")
 			sqlContent += fmt.Sprintf("SET price_buyback=%.1f, price_sell=%.0f\n", priceBuyback, priceSell)
 			sqlContent += fmt.Sprintf("WHERE \"date\"='%s' AND brand='%s' AND denom=%.1f;\n\n", today, brandSQL, denom)
+			queryCount++
 		}
 	}
 
-	sqlContent += "-- Total queries generated successfully\n"
+	sqlContent += fmt.Sprintf("-- Total %d queries generated successfully\n", queryCount)
 
 	// Tulis ke file update_gold_prices.sql
 	err = ioutil.WriteFile("update_gold_prices.sql", []byte(sqlContent), 0644)
@@ -137,7 +139,7 @@ func generateSQL(allBrandsData []BrandData) error {
 		return fmt.Errorf("gagal menulis SQL file: %v", err)
 	}
 
-	fmt.Println("✅ SQL queries berhasil dibuat dan disimpan ke update_gold_prices.sql")
+	fmt.Printf("✅ %d SQL queries berhasil dibuat dan disimpan ke update_gold_prices.sql\n", queryCount)
 	fmt.Println("\n--- Preview SQL Queries ---")
 	
 	// Tampilkan beberapa baris pertama
@@ -157,17 +159,26 @@ func generateSQL(allBrandsData []BrandData) error {
 }
 
 func main() {
-	fmt.Println("🔄 Memuat halaman dengan headless browser...")
+	startTime := time.Now()
+	fmt.Println("🚀 Memulai proses scraping...")
+	fmt.Printf("⏰ Waktu mulai: %s\n\n", startTime.Format("2006-01-02 15:04:05"))
 
 	// 1. Ambil konten HTML yang sudah di-render menggunakan chromedp
+	fmt.Println("🔄 Memuat halaman dengan headless browser...")
+	stepStart := time.Now()
+	
 	htmlContent, err := fetchRenderedHTML(url)
 	if err != nil {
 		log.Fatalf("Gagal memuat URL dengan chromedp: %v", err)
 	}
 
-	fmt.Println("✅ Halaman berhasil dimuat")
+	stepDuration := time.Since(stepStart)
+	fmt.Printf("✅ Halaman berhasil dimuat (%.2f detik)\n", stepDuration.Seconds())
 
 	// 2. Parse HTML dengan htmlquery
+	fmt.Println("\n🔄 Parsing HTML dan ekstraksi data...")
+	stepStart = time.Now()
+	
 	doc, err := htmlquery.Parse(strings.NewReader(htmlContent))
 	if err != nil {
 		log.Fatalf("Gagal parse HTML: %v", err)
@@ -246,7 +257,13 @@ func main() {
 		}
 	}
 
+	stepDuration = time.Since(stepStart)
+	fmt.Printf("✅ Parsing dan ekstraksi selesai (%.2f detik)\n", stepDuration.Seconds())
+
 	// 3. Export ke JSON
+	fmt.Println("\n🔄 Menyimpan data ke JSON...")
+	stepStart = time.Now()
+	
 	jsonData, err := json.MarshalIndent(allBrandsData, "", "  ")
 	if err != nil {
 		log.Fatalf("Gagal meng-encode ke JSON: %v", err)
@@ -258,17 +275,29 @@ func main() {
 		log.Fatalf("Gagal menulis ke file: %v", err)
 	}
 
-	fmt.Println("✅ Data harga emas berhasil di-scrap dan disimpan ke harga_emas.json")
+	stepDuration = time.Since(stepStart)
+	fmt.Printf("✅ Data harga emas berhasil disimpan ke harga_emas.json (%.2f detik)\n", stepDuration.Seconds())
 	fmt.Println("\n--- Tampilan Hasil JSON ---")
 	fmt.Println(string(jsonData))
 
 	// 5. Generate SQL queries
+	stepStart = time.Now()
 	err = generateSQL(allBrandsData)
 	if err != nil {
 		log.Fatalf("Gagal generate SQL: %v", err)
 	}
+	stepDuration = time.Since(stepStart)
 
-	fmt.Println("\n✅ Proses selesai! File yang dibuat:")
+	// Summary
+	totalDuration := time.Since(startTime)
+	fmt.Println("\n" + strings.Repeat("=", 60))
+	fmt.Println("✅ PROSES SELESAI!")
+	fmt.Println(strings.Repeat("=", 60))
+	fmt.Println("📁 File yang dibuat:")
 	fmt.Println("   - harga_emas.json")
 	fmt.Println("   - update_gold_prices.sql")
+	fmt.Println()
+	fmt.Printf("⏱️  Total waktu eksekusi: %.2f detik (%.2f menit)\n", totalDuration.Seconds(), totalDuration.Minutes())
+	fmt.Printf("⏰ Waktu selesai: %s\n", time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Println(strings.Repeat("=", 60))
 }
