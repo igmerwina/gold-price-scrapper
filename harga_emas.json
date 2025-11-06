@@ -1,0 +1,137 @@
+[
+  {
+    "brand": "GALERI 24",
+    "data": [
+      {
+        "berat": "0.5",
+        "harga_jual": "1237000",
+        "harga_buyback": "1101000"
+      },
+      {
+        "berat": "1",
+        "harga_jual": "2358000",
+        "harga_buyback": "2202000"
+      },
+      {
+        "berat": "2",
+        "harga_jual": "4645000",
+        "harga_buyback": "4404000"
+      },
+      {
+        "berat": "5",
+        "harga_jual": "11528000",
+        "harga_buyback": "11010000"
+      },
+      {
+        "berat": "10",
+        "harga_jual": "22993000",
+        "harga_buyback": "22021000"
+      },
+      {
+        "berat": "25",
+        "harga_jual": "57341000",
+        "harga_buyback": "54784000"
+      },
+      {
+        "berat": "50",
+        "harga_jual": "114591000",
+        "harga_buyback": "109569000"
+      },
+      {
+        "berat": "100",
+        "harga_jual": "229070000",
+        "harga_buyback": "219138000"
+      }
+    ]
+  },
+  {
+    "brand": "ANTAM",
+    "data": [
+      {
+        "berat": "0.5",
+        "harga_jual": "1298000",
+        "harga_buyback": "1099000"
+      },
+      {
+        "berat": "1",
+        "harga_jual": "2486000",
+        "harga_buyback": "2199000"
+      },
+      {
+        "berat": "2",
+        "harga_jual": "4906000",
+        "harga_buyback": "4399000"
+      },
+      {
+        "berat": "5",
+        "harga_jual": "12183000",
+        "harga_buyback": "10999000"
+      },
+      {
+        "berat": "10",
+        "harga_jual": "24305000",
+        "harga_buyback": "21999000"
+      },
+      {
+        "berat": "25",
+        "harga_jual": "60624000",
+        "harga_buyback": "54729000"
+      },
+      {
+        "berat": "50",
+        "harga_jual": "121160000",
+        "harga_buyback": "109459000"
+      },
+      {
+        "berat": "100",
+        "harga_jual": "242234000",
+        "harga_buyback": "218919000"
+      }
+    ]
+  },
+  {
+    "brand": "UBS",
+    "data": [
+      {
+        "berat": "0.5",
+        "harga_jual": "1276000",
+        "harga_buyback": "1099000"
+      },
+      {
+        "berat": "1",
+        "harga_jual": "2360000",
+        "harga_buyback": "2199000"
+      },
+      {
+        "berat": "2",
+        "harga_jual": "4683000",
+        "harga_buyback": "4399000"
+      },
+      {
+        "berat": "5",
+        "harga_jual": "11572000",
+        "harga_buyback": "10999000"
+      },
+      {
+        "berat": "10",
+        "harga_jual": "23022000",
+        "harga_buyback": "21999000"
+      },
+      {
+        "berat": "25",
+        "harga_jual": "57441000",
+        "harga_buyback": "54729000"
+      },
+      {
+        "berat": "50",
+        "harga_jual": "114648000",
+        "harga_buyback": "109459000"
+      },
+      {
+        "berat": "100",
+        "harga_jual": "229204000",
+        "harga_buyback": "218919000"
+      }
+    ]
+  }
+]
