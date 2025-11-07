@@ -1,6 +1,8 @@
 module gold-scraper
 
-go 1.24.3
+go 1.24
+
+toolchain go1.24.3
 
 require (
 	github.com/antchfx/htmlquery v1.3.4
