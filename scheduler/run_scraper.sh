@@ -6,8 +6,18 @@
 # Set working directory
 cd /Users/macbook/Documents/code/random/gold-scrapper/scheduler
 
-# Load environment variables (skip comments and empty lines)
-export $(grep -v '^#' .env | grep -v '^$' | xargs)
+# Load environment variables properly (handles quoted values with spaces)
+if [ -f .env ]; then
+    set -a
+    while IFS= read -r line; do
+        # Skip comments and empty lines
+        case "$line" in
+            \#*|"") continue ;;
+            *) export "$line" ;;
+        esac
+    done < .env
+    set +a
+fi
 
 # Log file
 LOG_FILE="logs/scraper_$(date +%Y%m%d_%H%M%S).log"

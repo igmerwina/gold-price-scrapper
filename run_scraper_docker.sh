@@ -12,9 +12,17 @@ fi
 
 cd "$SCRIPT_DIR"
 
-# Load environment variables
+# Load environment variables properly (handles quoted values with spaces)
 if [ -f .env ]; then
-    export $(grep -v '^#' .env | grep -v '^$' | xargs)
+    set -a
+    while IFS= read -r line; do
+        # Skip comments and empty lines
+        case "$line" in
+            \#*|"") continue ;;
+            *) export "$line" ;;
+        esac
+    done < .env
+    set +a
 else
     echo "⚠️  Warning: .env file not found, using environment variables"
 fi
