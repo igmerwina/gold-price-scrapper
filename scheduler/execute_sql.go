@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -19,7 +18,6 @@ const (
 	rootSQLPath   = "sql/update_gold_prices.sql"
 )
 
-// Config untuk koneksi Supabase
 type SupabaseConfig struct {
 	Host     string
 	Port     string
@@ -29,10 +27,8 @@ type SupabaseConfig struct {
 	SSLMode  string
 }
 
-// getSupabaseConfig membaca konfigurasi dari environment variables atau .env
 func getSupabaseConfig() SupabaseConfig {
-	// Default values
-	config := SupabaseConfig{
+	return SupabaseConfig{
 		Host:     getEnv("SUPABASE_HOST", ""),
 		Port:     getEnv("SUPABASE_PORT", "5432"),
 		User:     getEnv("SUPABASE_USER", "postgres"),
@@ -40,75 +36,49 @@ func getSupabaseConfig() SupabaseConfig {
 		DBName:   getEnv("SUPABASE_DB", "postgres"),
 		SSLMode:  getEnv("SUPABASE_SSL_MODE", "require"),
 	}
-
-	return config
 }
 
-// getEnv mendapatkan environment variable dengan default value
 func getEnv(key, defaultValue string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue
+	if value := os.Getenv(key); value != "" {
+		return value
 	}
-	return value
+	return defaultValue
 }
 
-// getSQLFilePath menentukan path ke SQL file berdasarkan environment
 func getSQLFilePath() string {
-	// Cek apakah di Docker (cek file /.dockerenv atau env var)
 	if _, err := os.Stat("/.dockerenv"); err == nil {
-		// Di dalam Docker container
 		return dockerSQLPath
 	}
 	
-	// Cek environment variable IS_DOCKER
 	if os.Getenv("IS_DOCKER") == "true" {
 		return dockerSQLPath
 	}
 	
-	// Local development - cek beberapa kemungkinan path
-	possiblePaths := []string{
-		localSQLPath,           // Dari scheduler/
-		rootSQLPath,            // Dari root
-		dockerSQLPath,          // Docker path
-	}
-	
+	possiblePaths := []string{localSQLPath, rootSQLPath, dockerSQLPath}
 	for _, path := range possiblePaths {
 		if _, err := os.Stat(path); err == nil {
 			return path
 		}
 	}
 	
-	// Default ke path relatif
 	return localSQLPath
 }
 
-// connectSupabase membuat koneksi ke Supabase PostgreSQL
 func connectSupabase(config SupabaseConfig) (*sql.DB, error) {
-	// Format connection string
 	connStr := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
-		config.Host,
-		config.Port,
-		config.User,
-		config.Password,
-		config.DBName,
-		config.SSLMode,
+		config.Host, config.Port, config.User, config.Password, config.DBName, config.SSLMode,
 	)
 
-	// Buka koneksi
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("gagal membuka koneksi: %v", err)
 	}
 
-	// Test koneksi
-	err = db.Ping()
-	if err != nil {
+	if err = db.Ping(); err != nil {
 		return nil, fmt.Errorf("gagal ping database: %v", err)
 	}
 
-	// Set connection pool settings
 	db.SetMaxOpenConns(10)
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(time.Hour)
@@ -116,42 +86,30 @@ func connectSupabase(config SupabaseConfig) (*sql.DB, error) {
 	return db, nil
 }
 
-// executeSQLFile membaca dan mengeksekusi file SQL
 func executeSQLFile(db *sql.DB, filename string) (int, error) {
-	// Baca file SQL
-	content, err := ioutil.ReadFile(filename)
+	content, err := os.ReadFile(filename)
 	if err != nil {
 		return 0, fmt.Errorf("gagal membaca file %s: %v", filename, err)
 	}
 
-	sqlContent := string(content)
-
-	// Split SQL statements (sederhana, asumsi setiap statement diakhiri dengan ;)
-	statements := strings.Split(sqlContent, ";")
-	
+	statements := strings.Split(string(content), ";")
 	executedCount := 0
 	failedCount := 0
 
-	// Eksekusi setiap statement
 	for i, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
 		
-		// Skip empty statements dan comments
 		if stmt == "" || strings.HasPrefix(stmt, "--") {
 			continue
 		}
 
-		// Skip pure comment lines
 		if !strings.Contains(stmt, "UPDATE") && !strings.Contains(stmt, "INSERT") {
 			continue
 		}
 
-		// Replace gold_prices_v2 with gold_prices_v3 if found
 		stmt = strings.ReplaceAll(stmt, "gold_prices_v2", "gold_prices_v3")
 
-		// Eksekusi statement
-		_, err := db.Exec(stmt)
-		if err != nil {
+		if _, err := db.Exec(stmt); err != nil {
 			log.Printf("⚠️  Error executing statement %d: %v", i+1, err)
 			log.Printf("Statement: %s", stmt[:min(len(stmt), 100)])
 			failedCount++
@@ -160,7 +118,6 @@ func executeSQLFile(db *sql.DB, filename string) (int, error) {
 
 		executedCount++
 
-		// Log progress setiap 10 queries
 		if executedCount%10 == 0 {
 			fmt.Printf("   Progress: %d queries executed...\n", executedCount)
 		}
@@ -186,10 +143,8 @@ func main() {
 	fmt.Println(strings.Repeat("=", 60))
 	fmt.Printf("⏰ Waktu: %s\n\n", startTime.Format("2006-01-02 15:04:05"))
 
-	// Load konfigurasi
 	config := getSupabaseConfig()
 
-	// Validasi konfigurasi
 	if config.Host == "" {
 		log.Fatal("❌ SUPABASE_HOST tidak ditemukan. Set environment variable terlebih dahulu.")
 	}
@@ -202,7 +157,6 @@ func main() {
 	fmt.Printf("   Database: %s\n", config.DBName)
 	fmt.Printf("   User: %s\n\n", config.User)
 
-	// Koneksi ke database
 	db, err := connectSupabase(config)
 	if err != nil {
 		log.Fatalf("❌ Gagal koneksi ke Supabase: %v", err)
@@ -211,7 +165,6 @@ func main() {
 
 	fmt.Println("✅ Koneksi berhasil!")
 
-	// Tentukan path SQL file (support Docker dan local environment)
 	sqlFile := getSQLFilePath()
 	
 	if _, err := os.Stat(sqlFile); os.IsNotExist(err) {

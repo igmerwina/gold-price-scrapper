@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/antchfx/htmlquery"
 	"github.com/chromedp/chromedp"
+	"golang.org/x/net/html"
 )
 
 // GoldData merepresentasikan struktur data emas per berat
@@ -28,14 +28,15 @@ type BrandData struct {
 	Data  []GoldData `json:"data"`
 }
 
-const url = "https://galeri24.co.id/harga-emas"
-
-// Constants untuk path file
 const (
+	url            = "https://galeri24.co.id/harga-emas"
 	dockerJSONPath = "/app/sql/harga_emas.json"
 	dockerSQLPath  = "/app/sql/update_gold_prices.sql"
 	localJSONPath  = "../sql/harga_emas.json"
 	localSQLPath   = "../sql/update_gold_prices.sql"
+	dateFormat     = "2006-01-02"
+	timeFormat     = "2006-01-02 15:04:05"
+	defaultTable   = "gold_prices_v3"
 )
 
 // isDockerEnvironment mengecek apakah sedang berjalan di Docker
@@ -143,102 +144,98 @@ func fetchRenderedHTML(url string) (string, error) {
 
 // generateSQL membuat SQL UPDATE queries dari data JSON
 func generateSQL(allBrandsData []BrandData) error {
-	today := time.Now().Format("2006-01-02")
-	now := time.Now()
-	generatedTime := now.Format("2006-01-02 15:04:05")
+	today := time.Now().Format(dateFormat)
+	generatedTime := time.Now().Format(timeFormat)
 
-	// Get table name from environment variable
-	tableName := os.Getenv("TABLE_NAME")
-	if tableName == "" {
-		tableName = "gold_prices_v3" // Default fallback
-	}
-
+	tableName := getTableName()
 	fmt.Println("\n🔄 Membuat SQL UPDATE queries...")
 	fmt.Printf("📊 Target table: %s\n", tableName)
-	
-	queryCount := 0
-	// Buka file untuk menulis SQL
-	sqlFile, err := ioutil.TempFile("", "sql_*.txt")
-	if err != nil {
-		return fmt.Errorf("gagal membuat temp file: %v", err)
-	}
-	defer sqlFile.Close()
 
 	sqlContent := fmt.Sprintf("-- SQL UPDATE Queries untuk Gold Prices\n-- Generated on: %s\n\n", generatedTime)
-
-	for _, brandData := range allBrandsData {
-		brand := brandData.Brand
-		
-		brandSQL := brand
-		switch brand {
-		case "GALERI 24":
-			brandSQL = "Galeri24"
-		case "ANTAM":
-			brandSQL = "Antam"
-		case "UBS":
-			brandSQL = "UBS"
-		}
-
-		for _, gold := range brandData.Data {
-			denom, err := strconv.ParseFloat(gold.Berat, 64)
-			if err != nil {
-				log.Printf("Warning: Gagal parse berat '%s': %v", gold.Berat, err)
-				continue
-			}
-
-			priceSell, err := strconv.ParseFloat(gold.HargaJual, 64)
-			if err != nil {
-				log.Printf("Warning: Gagal parse harga jual '%s': %v", gold.HargaJual, err)
-				continue
-			}
-
-			priceBuyback, err := strconv.ParseFloat(gold.HargaBuyback, 64)
-			if err != nil {
-				log.Printf("Warning: Gagal parse harga buyback '%s': %v", gold.HargaBuyback, err)
-				continue
-			}
-
-			sqlContent += fmt.Sprintf("UPDATE public.%s\n", tableName)
-			sqlContent += fmt.Sprintf("SET price_buyback=%.1f, price_sell=%.0f\n", priceBuyback, priceSell)
-			sqlContent += fmt.Sprintf("WHERE \"date\"='%s' AND brand='%s' AND denom=%.1f;\n\n", today, brandSQL, denom)
-			queryCount++
-		}
-	}
+	queryCount := buildSQLQueries(&sqlContent, allBrandsData, tableName, today)
 
 	sqlContent += fmt.Sprintf("-- Total %d queries generated successfully\n", queryCount)
 
-	// Tulis ke file update_gold_prices.sql (support Docker dan local)
-	sqlPath := getSQLPath()
-	err = ioutil.WriteFile(sqlPath, []byte(sqlContent), 0644)
-	if err != nil {
+	if err := os.WriteFile(getSQLPath(), []byte(sqlContent), 0644); err != nil {
 		return fmt.Errorf("gagal menulis SQL file: %v", err)
 	}
 
-	fmt.Printf("✅ %d SQL queries berhasil dibuat dan disimpan ke %s\n", queryCount, sqlPath)
-	// fmt.Println("\n--- Preview SQL Queries ---")
-	
-	// // Tampilkan beberapa baris pertama
-	// lines := strings.Split(sqlContent, "\n")
-	// previewLines := 20
-	// if len(lines) < previewLines {
-	// 	previewLines = len(lines)
-	// }
-	// for i := 0; i < previewLines; i++ {
-	// 	fmt.Println(lines[i])
-	// }
-	// if len(lines) > previewLines {
-	// 	fmt.Printf("... dan %d baris lainnya\n", len(lines)-previewLines)
-	// }
-
+	fmt.Printf("✅ %d SQL queries berhasil dibuat dan disimpan ke %s\n", queryCount, getSQLPath())
 	return nil
+}
+
+func getTableName() string {
+	tableName := os.Getenv("TABLE_NAME")
+	if tableName == "" {
+		tableName = defaultTable
+	}
+	return tableName
+}
+
+func buildSQLQueries(sqlContent *string, allBrandsData []BrandData, tableName, today string) int {
+	queryCount := 0
+	for _, brandData := range allBrandsData {
+		brandSQL := normalizeBrandName(brandData.Brand)
+		for _, gold := range brandData.Data {
+			if query := buildSingleQuery(gold, tableName, today, brandSQL); query != "" {
+				*sqlContent += query
+				queryCount++
+			}
+		}
+	}
+	return queryCount
+}
+
+func normalizeBrandName(brand string) string {
+	switch brand {
+	case "GALERI 24":
+		return "Galeri24"
+	case "ANTAM":
+		return "Antam"
+	case "UBS":
+		return "UBS"
+	default:
+		return brand
+	}
+}
+
+func buildSingleQuery(gold GoldData, tableName, today, brandSQL string) string {
+	denom, err := strconv.ParseFloat(gold.Berat, 64)
+	if err != nil {
+		log.Printf("Warning: Gagal parse berat '%s': %v", gold.Berat, err)
+		return ""
+	}
+
+	priceSell, err := strconv.ParseFloat(gold.HargaJual, 64)
+	if err != nil {
+		log.Printf("Warning: Gagal parse harga jual '%s': %v", gold.HargaJual, err)
+		return ""
+	}
+
+	priceBuyback, err := strconv.ParseFloat(gold.HargaBuyback, 64)
+	if err != nil {
+		log.Printf("Warning: Gagal parse harga buyback '%s': %v", gold.HargaBuyback, err)
+		return ""
+	}
+
+	return fmt.Sprintf("UPDATE public.%s\nSET price_buyback=%.1f, price_sell=%.0f\nWHERE \"date\"='%s' AND brand='%s' AND denom=%.1f;\n\n",
+		tableName, priceBuyback, priceSell, today, brandSQL, denom)
 }
 
 func main() {
 	startTime := time.Now()
 	fmt.Println("🚀 Memulai proses scraping...")
-	fmt.Printf("⏰ Waktu mulai: %s\n\n", startTime.Format("2006-01-02 15:04:05"))
+	fmt.Printf("⏰ Waktu mulai: %s\n\n", startTime.Format(timeFormat))
 
-	// 1. Ambil konten HTML yang sudah di-render menggunakan chromedp
+	htmlContent := fetchHTML()
+	allBrandsData := parseHTML(htmlContent)
+	saveJSON(allBrandsData)
+	generateSQL(allBrandsData)
+
+	printSummary(startTime)
+}
+
+func fetchHTML() string {
 	fmt.Println("🔄 Memuat halaman dengan headless browser...")
 	stepStart := time.Now()
 	
@@ -247,123 +244,125 @@ func main() {
 		log.Fatalf("Gagal memuat URL dengan chromedp: %v", err)
 	}
 
-	stepDuration := time.Since(stepStart)
-	fmt.Printf("✅ Halaman berhasil dimuat (%.2f detik)\n", stepDuration.Seconds())
+	fmt.Printf("✅ Halaman berhasil dimuat (%.2f detik)\n", time.Since(stepStart).Seconds())
+	return htmlContent
+}
 
-	// 2. Parse HTML dengan htmlquery
+func parseHTML(htmlContent string) []BrandData {
 	fmt.Println("\n🔄 Parsing HTML dan ekstraksi data...")
-	stepStart = time.Now()
+	stepStart := time.Now()
 	
 	doc, err := htmlquery.Parse(strings.NewReader(htmlContent))
 	if err != nil {
 		log.Fatalf("Gagal parse HTML: %v", err)
 	}
 
-	allBrandsData := []BrandData{}
+	allBrandsData := extractBrandsData(doc)
+	
+	fmt.Printf("✅ Parsing dan ekstraksi selesai (%.2f detik)\n", time.Since(stepStart).Seconds())
+	return allBrandsData
+}
 
-	// Daftar XPath untuk menemukan div rows berdasarkan ID vendor
-	// Struktur: <div id="GALERI 24"> berisi grid dengan div row yang berisi col-span-1, col-span-2, col-span-2
+func extractBrandsData(doc *html.Node) []BrandData {
 	xpathSelectors := map[string]string{
-		"GALERI 24":      "//div[@id='GALERI 24']//div[contains(@class, 'grid-cols-5') and contains(@class, 'divide-x') and contains(@class, 'lg:hover:bg-neutral-50')]",
-		"ANTAM":          "//div[@id='ANTAM']//div[contains(@class, 'grid-cols-5') and contains(@class, 'divide-x') and contains(@class, 'lg:hover:bg-neutral-50')]",
-		"UBS":            "//div[@id='UBS']//div[contains(@class, 'grid-cols-5') and contains(@class, 'divide-x') and contains(@class, 'lg:hover:bg-neutral-50')]",
+		"GALERI 24": "//div[@id='GALERI 24']//div[contains(@class, 'grid-cols-5') and contains(@class, 'divide-x') and contains(@class, 'lg:hover:bg-neutral-50')]",
+		"ANTAM":     "//div[@id='ANTAM']//div[contains(@class, 'grid-cols-5') and contains(@class, 'divide-x') and contains(@class, 'lg:hover:bg-neutral-50')]",
+		"UBS":       "//div[@id='UBS']//div[contains(@class, 'grid-cols-5') and contains(@class, 'divide-x') and contains(@class, 'lg:hover:bg-neutral-50')]",
 	}
 
+	var allBrandsData []BrandData
 	for brand, xpath := range xpathSelectors {
-		nodes := htmlquery.Find(doc, xpath)
-		data := []GoldData{}
-
-		for _, node := range nodes {
-			// Kolom 1: Berat (col-span-1)
-			beratNode := htmlquery.FindOne(node, ".//div[contains(@class, 'col-span-1')]")
-			berat := htmlquery.InnerText(beratNode)
-			berat = strings.TrimSpace(berat)
-			
-			// Kolom 2: Harga Jual (col-span-2, posisi ke-2)
-			hargaJualNodes := htmlquery.Find(node, ".//div[contains(@class, 'col-span-2')]")
-			hargaJual := ""
-			if len(hargaJualNodes) >= 1 {
-				hargaJual = htmlquery.InnerText(hargaJualNodes[0])
-				hargaJual = cleanPrice(hargaJual)
-			}
-
-			// Kolom 3: Harga Buyback (col-span-2, posisi ke-3)
-			hargaBuyback := ""
-			if len(hargaJualNodes) >= 2 {
-				hargaBuyback = htmlquery.InnerText(hargaJualNodes[1])
-				hargaBuyback = cleanPrice(hargaBuyback)
-			}
-
-			// Filter hanya gramasi tertentu
-			allowedWeights := []string{"0.5", "1", "2", "5", "10", "25", "50", "100"}
-			isAllowed := false
-			beratClean := strings.TrimSpace(strings.ToLower(berat))
-			
-			// Cek apakah berat termasuk dalam daftar yang diizinkan
-			for _, weight := range allowedWeights {
-				if strings.Contains(beratClean, weight+" gr") || 
-				   strings.Contains(beratClean, weight+" gram") ||
-				   beratClean == weight+"gr" ||
-				   beratClean == weight+" gr" ||
-				   beratClean == weight {
-					isAllowed = true
-					break
-				}
-			}
-			
-			// Hanya proses jika Berat dan Harga terdeteksi dan termasuk gramasi yang diizinkan
-			if berat != "" && hargaJual != "" && !strings.Contains(strings.ToLower(berat), "berat") && isAllowed {
-				data = append(data, GoldData{
-					Berat:        berat,
-					HargaJual:    hargaJual,
-					HargaBuyback: hargaBuyback,
-				})
-			}
-		}
-
-		// Tambahkan data brand ke slice utama jika ada data
+		data := extractBrandData(htmlquery.Find(doc, xpath))
 		if len(data) > 0 {
-			allBrandsData = append(allBrandsData, BrandData{
-				Brand: brand,
-				Data:  data,
-			})
+			allBrandsData = append(allBrandsData, BrandData{Brand: brand, Data: data})
 		} else {
 			fmt.Printf("⚠️  Tidak ada data ditemukan untuk brand %s\n", brand)
 		}
 	}
+	return allBrandsData
+}
 
-	stepDuration = time.Since(stepStart)
-	fmt.Printf("✅ Parsing dan ekstraksi selesai (%.2f detik)\n", stepDuration.Seconds())
+func extractBrandData(nodes []*html.Node) []GoldData {
+	var data []GoldData
+	allowedWeights := []string{"0.5", "1", "2", "5", "10", "25", "50", "100"}
 
-	// 3. Export ke JSON
+	for _, node := range nodes {
+		gold := extractGoldData(node)
+		if isValidGoldData(gold, allowedWeights) {
+			data = append(data, gold)
+		}
+	}
+	return data
+}
+
+func extractGoldData(node *html.Node) GoldData {
+	beratNode := htmlquery.FindOne(node, ".//div[contains(@class, 'col-span-1')]")
+	berat := strings.TrimSpace(htmlquery.InnerText(beratNode))
+	
+	hargaNodes := htmlquery.Find(node, ".//div[contains(@class, 'col-span-2')]")
+	
+	hargaJual := ""
+	if len(hargaNodes) >= 1 {
+		hargaJual = cleanPrice(htmlquery.InnerText(hargaNodes[0]))
+	}
+	
+	hargaBuyback := ""
+	if len(hargaNodes) >= 2 {
+		hargaBuyback = cleanPrice(htmlquery.InnerText(hargaNodes[1]))
+	}
+
+	return GoldData{
+		Berat:        berat,
+		HargaJual:    hargaJual,
+		HargaBuyback: hargaBuyback,
+	}
+}
+
+func isValidGoldData(gold GoldData, allowedWeights []string) bool {
+	if gold.Berat == "" || gold.HargaJual == "" || strings.Contains(strings.ToLower(gold.Berat), "berat") {
+		return false
+	}
+
+	beratClean := strings.TrimSpace(strings.ToLower(gold.Berat))
+	for _, weight := range allowedWeights {
+		if strings.Contains(beratClean, weight+" gr") || 
+			strings.Contains(beratClean, weight+" gram") ||
+			beratClean == weight+"gr" ||
+			beratClean == weight+" gr" ||
+			beratClean == weight {
+			return true
+		}
+	}
+	return false
+}
+
+func saveJSON(allBrandsData []BrandData) {
 	fmt.Println("\n🔄 Menyimpan data ke JSON...")
-	stepStart = time.Now()
+	stepStart := time.Now()
 	
 	jsonData, err := json.MarshalIndent(allBrandsData, "", "  ")
 	if err != nil {
 		log.Fatalf("Gagal meng-encode ke JSON: %v", err)
 	}
 
-	// 4. Tulis output ke file
-	err = ioutil.WriteFile(getJSONPath(), jsonData, 0644)
-	if err != nil {
+	sqlDir := getSQLDir()
+	os.MkdirAll(sqlDir, 0755)
+	
+	if err := os.WriteFile(getJSONPath(), jsonData, 0644); err != nil {
 		log.Fatalf("Gagal menulis ke file: %v", err)
 	}
 
-	stepDuration = time.Since(stepStart)
-	fmt.Printf("✅ Data harga emas berhasil disimpan ke %s (%.2f detik)\n", getJSONPath(), stepDuration.Seconds())
-	// fmt.Println("\n--- Tampilan Hasil JSON ---")
-	// fmt.Println(string(jsonData))
+	fmt.Printf("✅ Data harga emas berhasil disimpan ke %s (%.2f detik)\n", getJSONPath(), time.Since(stepStart).Seconds())
+}
 
-	// 5. Generate SQL queries
-	stepStart = time.Now()
-	err = generateSQL(allBrandsData)
-	if err != nil {
-		log.Fatalf("Gagal generate SQL: %v", err)
+func getSQLDir() string {
+	if isDockerEnvironment() {
+		return "/app/sql"
 	}
-	stepDuration = time.Since(stepStart)
+	return "../sql"
+}
 
-	// Summary
+func printSummary(startTime time.Time) {
 	totalDuration := time.Since(startTime)
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	fmt.Println("✅ PROSES SELESAI!")
@@ -373,6 +372,6 @@ func main() {
 	fmt.Println("   - sql/update_gold_prices.sql")
 	fmt.Println()
 	fmt.Printf("⏱️  Total waktu eksekusi: %.2f detik (%.2f menit)\n", totalDuration.Seconds(), totalDuration.Minutes())
-	fmt.Printf("⏰ Waktu selesai: %s\n", time.Now().Format("2006-01-02 15:04:05"))
+	fmt.Printf("⏰ Waktu selesai: %s\n", time.Now().Format(timeFormat))
 	fmt.Println(strings.Repeat("=", 60))
 }

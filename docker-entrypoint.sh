@@ -1,36 +1,14 @@
 #!/bin/sh
 
-# Gold Scraper - Docker Entrypoint with Cron
+set -e
 
-echo "🚀 Starting Gold Scraper in Docker..."
+echo "🚀 Starting Gold Scraper"
 echo "Timezone: $TZ"
-echo "Cron Schedule: ${CRON_SCHEDULE:-10 8 * * *}"
+echo "Cron: ${CRON_SCHEDULE:-10 8 * * *}"
 
-# Create log directory
 mkdir -p /app/logs /app/sql
 
-# Export environment variables to .env file for cron to access
-echo "📝 Creating .env file for cron..."
-cat > /app/.env << EOF
-SUPABASE_HOST=${SUPABASE_HOST}
-SUPABASE_PORT=${SUPABASE_PORT}
-SUPABASE_USER=${SUPABASE_USER}
-SUPABASE_PASSWORD=${SUPABASE_PASSWORD}
-SUPABASE_DB=${SUPABASE_DB}
-SUPABASE_SSL_MODE=${SUPABASE_SSL_MODE}
-TABLE_NAME=${TABLE_NAME:-gold_prices_v3}
-CRON_SCHEDULE=${CRON_SCHEDULE:-"10 8 * * *"}
-CRON_DESCRIPTION=${CRON_DESCRIPTION:-"Daily"}
-IS_DOCKER=true
-TZ=${TZ}
-EOF
-
-# Setup cron job
-CRON_SCHEDULE=${CRON_SCHEDULE:-"10 8 * * *"}
-
-# Write crontab with environment variables inline
-cat > /etc/crontabs/root << EOF
-# Environment variables for cron
+cat > /app/.env << ENVEOF
 SUPABASE_HOST=${SUPABASE_HOST}
 SUPABASE_PORT=${SUPABASE_PORT}
 SUPABASE_USER=${SUPABASE_USER}
@@ -40,27 +18,29 @@ SUPABASE_SSL_MODE=${SUPABASE_SSL_MODE}
 TABLE_NAME=${TABLE_NAME:-gold_prices_v3}
 IS_DOCKER=true
 TZ=${TZ}
+ENVEOF
 
-# Cron job
+CRON_SCHEDULE=${CRON_SCHEDULE:-"10 8 * * *"}
+
+cat > /etc/crontabs/root << CRONEOF
+SUPABASE_HOST=${SUPABASE_HOST}
+SUPABASE_PORT=${SUPABASE_PORT}
+SUPABASE_USER=${SUPABASE_USER}
+SUPABASE_PASSWORD=${SUPABASE_PASSWORD}
+SUPABASE_DB=${SUPABASE_DB}
+SUPABASE_SSL_MODE=${SUPABASE_SSL_MODE}
+TABLE_NAME=${TABLE_NAME:-gold_prices_v3}
+TZ=${TZ}
+
 $CRON_SCHEDULE cd /app && ./run_scraper.sh >> /app/logs/cron.log 2>&1
-EOF
+CRONEOF
 
-# Start cron in background
-crond -f -l 2 &
+echo "✅ Cron configured: $CRON_SCHEDULE"
 
-echo "✅ Cron job scheduled: $CRON_SCHEDULE"
-echo "📋 Checking cron jobs:"
-crontab -l
-
-# Run once on startup (optional)
-if [ "${RUN_ON_STARTUP:-true}" = "true" ]; then
+if [ "${RUN_ON_STARTUP}" = "true" ]; then
     echo "🔄 Running scraper on startup..."
     cd /app && ./run_scraper.sh
 fi
 
-# Keep container running
-echo "✅ Gold Scraper is running. Logs will appear in /app/logs/"
-echo "Press Ctrl+C to stop."
-
-# Tail logs to keep container alive
-tail -f /app/logs/*.log 2>/dev/null || tail -f /dev/null
+echo "🚀 Starting cron daemon..."
+crond -f -l 2
