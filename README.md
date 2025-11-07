@@ -13,6 +13,7 @@ Automated scraper untuk mengambil harga emas dari [Galeri24.co.id](https://galer
 - ⏰ Cron scheduler (fleksibel via `.env`)
 - 📝 Comprehensive logging
 - 🔄 Auto cleanup log files
+- 🐳 Docker & Dokploy ready
 
 ## 🚀 Quick Start
 
@@ -184,6 +185,20 @@ go run execute_sql.go
 
 - [QUICKSTART.md](scheduler/QUICKSTART.md) - 5 minute setup
 - [README_SETUP.md](scheduler/README_SETUP.md) - Detailed guide
+- [DEPLOY_DOKPLOY.md](DEPLOY_DOKPLOY.md) - Deploy to Dokploy 🐳
+
+## 🐳 Docker Deployment
+
+```bash
+# Build & test locally
+docker build -t gold-scraper .
+docker run -d --name gold-scraper --env-file scheduler/.env gold-scraper
+
+# Or use docker-compose
+docker-compose up -d
+```
+
+See [DEPLOY_DOKPLOY.md](DEPLOY_DOKPLOY.md) for full deployment guide.
 
 ## 📄 License
 
