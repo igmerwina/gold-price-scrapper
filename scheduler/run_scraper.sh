@@ -3,8 +3,19 @@
 # Script untuk menjalankan gold price scraper dan update ke Supabase
 # Dijalankan oleh cron scheduler setiap hari jam 8:10 pagi
 
+# Detect environment
+if [ -f /.dockerenv ] || [ "$IS_DOCKER" = "true" ]; then
+    # Running in Docker
+    BASE_DIR="/app"
+    IS_DOCKER_ENV=true
+else
+    # Running locally
+    BASE_DIR="/Users/macbook/Documents/code/random/gold-scrapper"
+    IS_DOCKER_ENV=false
+fi
+
 # Set working directory
-cd /Users/macbook/Documents/code/random/gold-scrapper/scheduler
+cd "$BASE_DIR/scheduler" || cd "$BASE_DIR"
 
 # Load environment variables properly (handles quoted values with spaces)
 if [ -f .env ]; then
@@ -16,6 +27,15 @@ if [ -f .env ]; then
             *) export "$line" ;;
         esac
     done < .env
+    set +a
+elif [ -f "$BASE_DIR/.env" ]; then
+    set -a
+    while IFS= read -r line; do
+        case "$line" in
+            \#*|"") continue ;;
+            *) export "$line" ;;
+        esac
+    done < "$BASE_DIR/.env"
     set +a
 fi
 
@@ -30,11 +50,25 @@ echo "========================================" | tee -a $LOG_FILE
 # 1. Jalankan scraper untuk ambil data terbaru
 echo "" | tee -a $LOG_FILE
 echo "Step 1: Scraping data harga emas..." | tee -a $LOG_FILE
-cd ../scrapper
-go run scrapper.go 2>&1 | tee -a ../$LOG_FILE
+echo "Environment: $([ "$IS_DOCKER_ENV" = true ] && echo "Docker" || echo "Local")" | tee -a $LOG_FILE
+
+if [ "$IS_DOCKER_ENV" = true ]; then
+    # Docker: gunakan binary yang sudah dikompilasi
+    cd "$BASE_DIR"
+    if [ -f "./scraper" ]; then
+        ./scraper 2>&1 | tee -a $LOG_FILE
+    else
+        echo "ERROR: Scraper binary tidak ditemukan!" | tee -a $LOG_FILE
+        exit 1
+    fi
+else
+    # Local: gunakan go run
+    cd "$BASE_DIR/scrapper"
+    go run scrapper.go 2>&1 | tee -a "../scheduler/$LOG_FILE"
+fi
 
 if [ $? -ne 0 ]; then
-    echo "ERROR: Scraping gagal!" | tee -a ../$LOG_FILE
+    echo "ERROR: Scraping gagal!" | tee -a $LOG_FILE
     exit 1
 fi
 

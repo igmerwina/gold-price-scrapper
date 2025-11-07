@@ -17,8 +17,8 @@ import (
 
 // GoldData merepresentasikan struktur data emas per berat
 type GoldData struct {
-	Berat       string `json:"berat"`
-	HargaJual   string `json:"harga_jual"`
+	Berat        string `json:"berat"`
+	HargaJual    string `json:"harga_jual"`
 	HargaBuyback string `json:"harga_buyback"`
 }
 
@@ -29,6 +29,45 @@ type BrandData struct {
 }
 
 const url = "https://galeri24.co.id/harga-emas"
+
+// Constants untuk path file
+const (
+	dockerJSONPath = "/app/sql/harga_emas.json"
+	dockerSQLPath  = "/app/sql/update_gold_prices.sql"
+	localJSONPath  = "../sql/harga_emas.json"
+	localSQLPath   = "../sql/update_gold_prices.sql"
+)
+
+// isDockerEnvironment mengecek apakah sedang berjalan di Docker
+func isDockerEnvironment() bool {
+	// Cek file /.dockerenv
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return true
+	}
+	
+	// Cek environment variable
+	if os.Getenv("IS_DOCKER") == "true" {
+		return true
+	}
+	
+	return false
+}
+
+// getJSONPath mengembalikan path JSON yang sesuai dengan environment
+func getJSONPath() string {
+	if isDockerEnvironment() {
+		return dockerJSONPath
+	}
+	return localJSONPath
+}
+
+// getSQLPath mengembalikan path SQL yang sesuai dengan environment
+func getSQLPath() string {
+	if isDockerEnvironment() {
+		return dockerSQLPath
+	}
+	return localSQLPath
+}
 
 // cleanPrice menghilangkan karakter non-digit kecuali koma dan mengganti koma dengan titik (jika ada)
 func cleanPrice(s string) string {
@@ -168,13 +207,14 @@ func generateSQL(allBrandsData []BrandData) error {
 
 	sqlContent += fmt.Sprintf("-- Total %d queries generated successfully\n", queryCount)
 
-	// Tulis ke file update_gold_prices.sql
-	err = ioutil.WriteFile("../sql/update_gold_prices.sql", []byte(sqlContent), 0644)
+	// Tulis ke file update_gold_prices.sql (support Docker dan local)
+	sqlPath := getSQLPath()
+	err = ioutil.WriteFile(sqlPath, []byte(sqlContent), 0644)
 	if err != nil {
 		return fmt.Errorf("gagal menulis SQL file: %v", err)
 	}
 
-	fmt.Printf("✅ %d SQL queries berhasil dibuat dan disimpan ke sql/update_gold_prices.sql\n", queryCount)
+	fmt.Printf("✅ %d SQL queries berhasil dibuat dan disimpan ke %s\n", queryCount, sqlPath)
 	// fmt.Println("\n--- Preview SQL Queries ---")
 	
 	// // Tampilkan beberapa baris pertama
@@ -305,13 +345,13 @@ func main() {
 	}
 
 	// 4. Tulis output ke file
-	err = ioutil.WriteFile("../sql/harga_emas.json", jsonData, 0644)
+	err = ioutil.WriteFile(getJSONPath(), jsonData, 0644)
 	if err != nil {
 		log.Fatalf("Gagal menulis ke file: %v", err)
 	}
 
 	stepDuration = time.Since(stepStart)
-	fmt.Printf("✅ Data harga emas berhasil disimpan ke sql/harga_emas.json (%.2f detik)\n", stepDuration.Seconds())
+	fmt.Printf("✅ Data harga emas berhasil disimpan ke %s (%.2f detik)\n", getJSONPath(), stepDuration.Seconds())
 	// fmt.Println("\n--- Tampilan Hasil JSON ---")
 	// fmt.Println(string(jsonData))
 

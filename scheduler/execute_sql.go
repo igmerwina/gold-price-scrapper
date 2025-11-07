@@ -12,6 +12,13 @@ import (
 	_ "github.com/lib/pq"
 )
 
+// Constants
+const (
+	dockerSQLPath = "/app/sql/update_gold_prices.sql"
+	localSQLPath  = "../sql/update_gold_prices.sql"
+	rootSQLPath   = "sql/update_gold_prices.sql"
+)
+
 // Config untuk koneksi Supabase
 type SupabaseConfig struct {
 	Host     string
@@ -44,6 +51,36 @@ func getEnv(key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+// getSQLFilePath menentukan path ke SQL file berdasarkan environment
+func getSQLFilePath() string {
+	// Cek apakah di Docker (cek file /.dockerenv atau env var)
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		// Di dalam Docker container
+		return dockerSQLPath
+	}
+	
+	// Cek environment variable IS_DOCKER
+	if os.Getenv("IS_DOCKER") == "true" {
+		return dockerSQLPath
+	}
+	
+	// Local development - cek beberapa kemungkinan path
+	possiblePaths := []string{
+		localSQLPath,           // Dari scheduler/
+		rootSQLPath,            // Dari root
+		dockerSQLPath,          // Docker path
+	}
+	
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	
+	// Default ke path relatif
+	return localSQLPath
 }
 
 // connectSupabase membuat koneksi ke Supabase PostgreSQL
@@ -174,8 +211,8 @@ func main() {
 
 	fmt.Println("✅ Koneksi berhasil!")
 
-	// Eksekusi SQL file
-	sqlFile := "../sql/update_gold_prices.sql"
+	// Tentukan path SQL file (support Docker dan local environment)
+	sqlFile := getSQLFilePath()
 	
 	if _, err := os.Stat(sqlFile); os.IsNotExist(err) {
 		log.Fatalf("❌ File %s tidak ditemukan", sqlFile)
