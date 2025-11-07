@@ -51,12 +51,15 @@ SUPABASE_PORT=6543
 SUPABASE_USER=postgres.xxxxx
 SUPABASE_PASSWORD=your-password
 SUPABASE_DB=postgres
+TABLE_NAME=gold_prices_v3
 CRON_SCHEDULE="10 8 * * *"
 ```
 
 ### 4. Database Setup
 
 ```sql
+-- Default table name: gold_prices_v3
+-- Ubah sesuai TABLE_NAME di .env jika berbeda
 CREATE TABLE public.gold_prices_v3 (
     id SERIAL PRIMARY KEY,
     date DATE NOT NULL,
@@ -119,6 +122,17 @@ CRON_SCHEDULE="0 8 * * 1-5"     # Mon-Fri 8 AM
 ```
 
 Update: `./manage_cron.sh install`
+
+### Ubah Table Name
+
+Edit `.env`:
+```env
+TABLE_NAME=gold_prices_v3      # Production
+TABLE_NAME=gold_prices_staging # Staging
+TABLE_NAME=gold_prices_test    # Testing
+```
+
+See [TABLE_NAME.md](TABLE_NAME.md) for details.
 
 ### Monitoring
 

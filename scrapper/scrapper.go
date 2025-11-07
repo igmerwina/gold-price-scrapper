@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -107,7 +108,14 @@ func generateSQL(allBrandsData []BrandData) error {
 	now := time.Now()
 	generatedTime := now.Format("2006-01-02 15:04:05")
 
+	// Get table name from environment variable
+	tableName := os.Getenv("TABLE_NAME")
+	if tableName == "" {
+		tableName = "gold_prices_v3" // Default fallback
+	}
+
 	fmt.Println("\n🔄 Membuat SQL UPDATE queries...")
+	fmt.Printf("📊 Target table: %s\n", tableName)
 	
 	queryCount := 0
 	// Buka file untuk menulis SQL
@@ -151,7 +159,7 @@ func generateSQL(allBrandsData []BrandData) error {
 				continue
 			}
 
-			sqlContent += fmt.Sprintf("UPDATE public.gold_prices_v3\n")
+			sqlContent += fmt.Sprintf("UPDATE public.%s\n", tableName)
 			sqlContent += fmt.Sprintf("SET price_buyback=%.1f, price_sell=%.0f\n", priceBuyback, priceSell)
 			sqlContent += fmt.Sprintf("WHERE \"date\"='%s' AND brand='%s' AND denom=%.1f;\n\n", today, brandSQL, denom)
 			queryCount++
