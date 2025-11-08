@@ -47,9 +47,10 @@ WORKDIR /app
 COPY --from=builder /app/scrapper/scraper ./scraper
 COPY --from=builder /app/scheduler/execute_sql ./execute_sql
 COPY run_scraper_docker.sh ./run_scraper.sh
+COPY test_cron.sh ./test_cron.sh
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 
 RUN mkdir -p logs sql && \
-    chmod +x run_scraper.sh /docker-entrypoint.sh scraper execute_sql
+    chmod +x run_scraper.sh test_cron.sh /docker-entrypoint.sh scraper execute_sql
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
