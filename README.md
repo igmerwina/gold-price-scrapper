@@ -32,7 +32,7 @@ nano scheduler/.env  # Edit with your Supabase credentials
 
 **Database Setup:**
 ```sql
-CREATE TABLE public.gold_prices_v3 (
+CREATE TABLE public.gold_prices_v2 (
     id SERIAL PRIMARY KEY,
     date DATE NOT NULL,
     brand VARCHAR(50) NOT NULL,
@@ -52,7 +52,7 @@ SUPABASE_PORT=6543
 SUPABASE_USER=postgres.your-project-ref
 SUPABASE_PASSWORD=your-password
 SUPABASE_DB=postgres
-TABLE_NAME=gold_prices_v3
+TABLE_NAME=gold_prices_v2
 CRON_SCHEDULE="10 8 * * *"
 ```
 
@@ -115,7 +115,7 @@ No restart needed in Docker - just update env var and container will reload.
 
 Edit `.env`:
 ```env
-TABLE_NAME=gold_prices_v3       # Production
+TABLE_NAME=gold_prices_v2       # Production
 TABLE_NAME=gold_prices_staging  # Staging
 TABLE_NAME=gold_prices_test     # Testing
 ```
@@ -211,7 +211,7 @@ docker exec -it gold-scraper tail -f /app/logs/cron.log
 
 **SQL** (`sql/update_gold_prices.sql`):
 ```sql
-UPDATE public.gold_prices_v3
+UPDATE public.gold_prices_v2
 SET price_buyback=842500.0, price_sell=892500
 WHERE "date"='2025-11-07' AND brand='Galeri24' AND denom=0.5;
 ```

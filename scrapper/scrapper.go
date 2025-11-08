@@ -36,7 +36,7 @@ const (
 	localSQLPath   = "../sql/update_gold_prices.sql"
 	dateFormat     = "2006-01-02"
 	timeFormat     = "2006-01-02 15:04:05"
-	defaultTable   = "gold_prices_v3"
+	defaultTable   = "gold_prices_v2"
 )
 
 // isDockerEnvironment mengecek apakah sedang berjalan di Docker

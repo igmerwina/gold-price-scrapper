@@ -107,7 +107,7 @@ func executeSQLFile(db *sql.DB, filename string) (int, error) {
 			continue
 		}
 
-		stmt = strings.ReplaceAll(stmt, "gold_prices_v2", "gold_prices_v3")
+		stmt = strings.ReplaceAll(stmt, "gold_prices_v2", "gold_prices_v2")
 
 		if _, err := db.Exec(stmt); err != nil {
 			log.Printf("⚠️  Error executing statement %d: %v", i+1, err)

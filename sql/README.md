@@ -32,7 +32,7 @@ This folder contains the generated output files from the gold price scraper.
 -- SQL UPDATE Queries untuk Gold Prices
 -- Generated on: 2025-11-06 16:26:47
 
-UPDATE public.gold_prices_v3
+UPDATE public.gold_prices_v2
 SET price_buyback=1106000.0, price_sell=1184000
 WHERE "date"='2025-11-06' AND brand='Galeri24' AND denom=0.5;
 ```
