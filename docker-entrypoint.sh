@@ -2,13 +2,16 @@
 
 set -e
 
+# Trap signals for graceful shutdown
+trap 'echo "Shutting down..."; kill $(jobs -p) 2>/dev/null; exit 0' SIGTERM SIGINT
+
 echo "=========================================="
 echo "🚀 Gold Scraper - Starting"
 echo "=========================================="
 echo "📅 Date: $(date)"
 echo "🌍 Timezone: ${TZ:-UTC}"
 echo "⏰ Cron Schedule: ${CRON_SCHEDULE:-10 8 * * *}"
-echo "🏷️  Table Name: ${TABLE_NAME:-gold_prices_v3}"
+echo "🏷️  Table Name: ${TABLE_NAME:-gold_prices_v2}"
 echo "=========================================="
 
 mkdir -p /app/logs /app/sql
@@ -21,7 +24,7 @@ SUPABASE_USER=${SUPABASE_USER}
 SUPABASE_PASSWORD=${SUPABASE_PASSWORD}
 SUPABASE_DB=${SUPABASE_DB}
 SUPABASE_SSL_MODE=${SUPABASE_SSL_MODE}
-TABLE_NAME=${TABLE_NAME:-gold_prices_v3}
+TABLE_NAME=${TABLE_NAME:-gold_prices_v2}
 IS_DOCKER=true
 TZ=${TZ}
 ENVEOF
@@ -100,10 +103,27 @@ if [ "${RUN_ON_STARTUP}" = "true" ]; then
 fi
 
 echo "=========================================="
-echo "🚀 Starting cron daemon in foreground..."
-echo "📝 Logs will be written to: /app/logs/cron.log"
-echo "=========================================="
-echo ""
 
-# Start cron in foreground with verbose logging
-exec crond -f -l 0 -L /dev/stdout
+# Check if should use loop scheduler (for setpgid error fix)
+if [ "${USE_LOOP_SCHEDULER}" = "true" ]; then
+    echo "🔄 Using loop-based scheduler (no cron)"
+    echo "📝 Logs will be written to: /app/logs/cron.log"
+    echo "=========================================="
+    echo ""
+    exec /app/loop-scheduler.sh
+else
+    echo "🚀 Starting cron daemon..."
+    echo "📝 Logs will be written to: /app/logs/cron.log"
+    echo "=========================================="
+    echo ""
+    
+    # Load crontab
+    crontab /etc/crontabs/root
+    
+    # Start cron daemon in background
+    crond -l 2
+    
+    # Keep container running by tailing the log
+    touch /app/logs/cron.log
+    tail -f /app/logs/cron.log
+fi
