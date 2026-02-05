@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
@@ -25,6 +26,13 @@ type SupabaseConfig struct {
 	Password string
 	DBName   string
 	SSLMode  string
+}
+
+// loadEnv memuat environment variables dari file .env
+func loadEnv() {
+	if err := godotenv.Load(".env"); err != nil {
+		log.Printf("⚠️  Tidak dapat memuat file .env: %v (akan gunakan system env vars)", err)
+	}
 }
 
 func getSupabaseConfig() SupabaseConfig {
@@ -49,18 +57,18 @@ func getSQLFilePath() string {
 	if _, err := os.Stat("/.dockerenv"); err == nil {
 		return dockerSQLPath
 	}
-	
+
 	if os.Getenv("IS_DOCKER") == "true" {
 		return dockerSQLPath
 	}
-	
+
 	possiblePaths := []string{localSQLPath, rootSQLPath, dockerSQLPath}
 	for _, path := range possiblePaths {
 		if _, err := os.Stat(path); err == nil {
 			return path
 		}
 	}
-	
+
 	return localSQLPath
 }
 
@@ -86,28 +94,30 @@ func connectSupabase(config SupabaseConfig) (*sql.DB, error) {
 	return db, nil
 }
 
-func executeSQLFile(db *sql.DB, filename string) (int, error) {
+func executeSQLFile(db *sql.DB, filename string) (int, int, error) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
-		return 0, fmt.Errorf("gagal membaca file %s: %v", filename, err)
+		return 0, 0, fmt.Errorf("gagal membaca file %s: %v", filename, err)
 	}
 
 	statements := strings.Split(string(content), ";")
-	executedCount := 0
+	insertCount := 0
+	updateCount := 0
 	failedCount := 0
 
 	for i, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
-		
+
 		if stmt == "" || strings.HasPrefix(stmt, "--") {
 			continue
 		}
 
-		if !strings.Contains(stmt, "UPDATE") && !strings.Contains(stmt, "INSERT") {
+		isInsert := strings.Contains(strings.ToUpper(stmt), "INSERT")
+		isUpdate := strings.Contains(strings.ToUpper(stmt), "UPDATE")
+
+		if !isInsert && !isUpdate {
 			continue
 		}
-
-		stmt = strings.ReplaceAll(stmt, "gold_prices_v2", "gold_prices_v2")
 
 		if _, err := db.Exec(stmt); err != nil {
 			log.Printf("⚠️  Error executing statement %d: %v", i+1, err)
@@ -116,18 +126,23 @@ func executeSQLFile(db *sql.DB, filename string) (int, error) {
 			continue
 		}
 
-		executedCount++
+		if isInsert {
+			insertCount++
+		} else if isUpdate {
+			updateCount++
+		}
 
-		if executedCount%10 == 0 {
-			fmt.Printf("   Progress: %d queries executed...\n", executedCount)
+		if (insertCount+updateCount)%10 == 0 {
+			fmt.Printf("   Progress: %d queries executed (INSERT: %d, UPDATE: %d)...\n",
+				insertCount+updateCount, insertCount, updateCount)
 		}
 	}
 
 	if failedCount > 0 {
-		return executedCount, fmt.Errorf("%d queries failed", failedCount)
+		return insertCount, updateCount, fmt.Errorf("%d queries failed", failedCount)
 	}
 
-	return executedCount, nil
+	return insertCount, updateCount, nil
 }
 
 func min(a, b int) int {
@@ -142,6 +157,8 @@ func main() {
 	fmt.Println("🚀 Gold Price SQL Executor - Supabase")
 	fmt.Println(strings.Repeat("=", 60))
 	fmt.Printf("⏰ Waktu: %s\n\n", startTime.Format("2006-01-02 15:04:05"))
+
+	loadEnv()
 
 	config := getSupabaseConfig()
 
@@ -166,24 +183,27 @@ func main() {
 	fmt.Println("✅ Koneksi berhasil!")
 
 	sqlFile := getSQLFilePath()
-	
+
 	if _, err := os.Stat(sqlFile); os.IsNotExist(err) {
 		log.Fatalf("❌ File %s tidak ditemukan", sqlFile)
 	}
 
 	fmt.Printf("\n📝 Mengeksekusi file: %s\n", sqlFile)
-	
-	executedCount, err := executeSQLFile(db, sqlFile)
-	
+
+	insertCount, updateCount, err := executeSQLFile(db, sqlFile)
+
 	duration := time.Since(startTime)
 
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	if err != nil {
 		fmt.Printf("⚠️  Selesai dengan error: %v\n", err)
-		fmt.Printf("✅ Berhasil: %d queries\n", executedCount)
+		fmt.Printf("✅ Berhasil - INSERT: %d | UPDATE: %d\n", insertCount, updateCount)
 	} else {
 		fmt.Println("✅ EKSEKUSI BERHASIL!")
-		fmt.Printf("📊 Total queries dieksekusi: %d\n", executedCount)
+		fmt.Printf("📊 Total queries dieksekusi:\n")
+		fmt.Printf("   - INSERT: %d queries\n", insertCount)
+		fmt.Printf("   - UPDATE: %d queries\n", updateCount)
+		fmt.Printf("   - Total: %d queries\n", insertCount+updateCount)
 	}
 	fmt.Printf("⏱️  Waktu eksekusi: %.2f detik\n", duration.Seconds())
 	fmt.Printf("⏰ Selesai: %s\n", time.Now().Format("2006-01-02 15:04:05"))

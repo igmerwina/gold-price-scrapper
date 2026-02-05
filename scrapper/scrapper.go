@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/antchfx/htmlquery"
 	"github.com/chromedp/chromedp"
+	"github.com/joho/godotenv"
 	"golang.org/x/net/html"
 )
 
@@ -45,12 +47,12 @@ func isDockerEnvironment() bool {
 	if _, err := os.Stat("/.dockerenv"); err == nil {
 		return true
 	}
-	
+
 	// Cek environment variable
 	if os.Getenv("IS_DOCKER") == "true" {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -142,25 +144,38 @@ func fetchRenderedHTML(url string) (string, error) {
 	return htmlContent, nil
 }
 
-// generateSQL membuat SQL UPDATE queries dari data JSON
+// generateSQL membuat SQL INSERT/UPDATE queries dari data JSON
 func generateSQL(allBrandsData []BrandData) error {
 	today := time.Now().Format(dateFormat)
 	generatedTime := time.Now().Format(timeFormat)
 
 	tableName := getTableName()
-	fmt.Println("\n🔄 Membuat SQL UPDATE queries...")
+	fmt.Println("\n🔄 Membuat SQL INSERT/UPDATE queries...")
 	fmt.Printf("📊 Target table: %s\n", tableName)
 
-	sqlContent := fmt.Sprintf("-- SQL UPDATE Queries untuk Gold Prices\n-- Generated on: %s\n\n", generatedTime)
-	queryCount := buildSQLQueries(&sqlContent, allBrandsData, tableName, today)
+	// Query last ID dari database via helper script
+	fmt.Println("🔍 Mengambil last ID dari database...")
+	lastID, err := getLastID(tableName)
+	if err != nil {
+		log.Printf("⚠️  Gagal mendapatkan last ID: %v. Menggunakan nilai default 0", err)
+		lastID = 0
+	}
+	fmt.Printf("✅ Last ID dari database: %d\n", lastID)
 
-	sqlContent += fmt.Sprintf("-- Total %d queries generated successfully\n", queryCount)
+	sqlContent := fmt.Sprintf("-- SQL INSERT/UPDATE Queries untuk Gold Prices\n-- Generated on: %s\n\n", generatedTime)
+	sqlContent += fmt.Sprintf("-- Last ID: %d, Next INSERT akan dimulai dari ID %d\n\n", lastID, lastID+1)
+
+	insertCount, updateCount := buildSQLQueriesWithInsert(&sqlContent, allBrandsData, tableName, today, lastID)
+
+	sqlContent += fmt.Sprintf("\n-- Total %d INSERT queries, %d UPDATE queries generated successfully\n", insertCount, updateCount)
 
 	if err := os.WriteFile(getSQLPath(), []byte(sqlContent), 0644); err != nil {
 		return fmt.Errorf("gagal menulis SQL file: %v", err)
 	}
 
-	fmt.Printf("✅ %d SQL queries berhasil dibuat dan disimpan ke %s\n", queryCount, getSQLPath())
+	fmt.Printf("✅ SQL queries berhasil dibuat dan disimpan ke %s\n", getSQLPath())
+	fmt.Printf("   📊 INSERT: %d | UPDATE: %d queries\n", insertCount, updateCount)
+	fmt.Printf("   🔢 INSERT ID range: %d - %d\n", lastID+1, lastID+int64(insertCount))
 	return nil
 }
 
@@ -172,18 +187,28 @@ func getTableName() string {
 	return tableName
 }
 
-func buildSQLQueries(sqlContent *string, allBrandsData []BrandData, tableName, today string) int {
-	queryCount := 0
+func buildSQLQueriesWithInsert(sqlContent *string, allBrandsData []BrandData, tableName, today string, lastID int64) (int, int) {
+	insertCount := 0
+	updateCount := 0
+	currentID := lastID + 1
+
 	for _, brandData := range allBrandsData {
 		brandSQL := normalizeBrandName(brandData.Brand)
 		for _, gold := range brandData.Data {
-			if query := buildSingleQuery(gold, tableName, today, brandSQL); query != "" {
-				*sqlContent += query
-				queryCount++
+			insertQuery, updateQuery := buildInsertAndUpdateQueries(gold, tableName, today, brandSQL, currentID)
+
+			if insertQuery != "" {
+				*sqlContent += insertQuery
+				insertCount++
+				currentID++ // Increment ID untuk INSERT berikutnya
+			}
+			if updateQuery != "" {
+				*sqlContent += updateQuery
+				updateCount++
 			}
 		}
 	}
-	return queryCount
+	return insertCount, updateCount
 }
 
 func normalizeBrandName(brand string) string {
@@ -199,33 +224,84 @@ func normalizeBrandName(brand string) string {
 	}
 }
 
-func buildSingleQuery(gold GoldData, tableName, today, brandSQL string) string {
+func buildInsertAndUpdateQueries(gold GoldData, tableName, today, brandSQL string, insertID int64) (string, string) {
 	denom, err := strconv.ParseFloat(gold.Berat, 64)
 	if err != nil {
 		log.Printf("Warning: Gagal parse berat '%s': %v", gold.Berat, err)
-		return ""
+		return "", ""
 	}
 
 	priceSell, err := strconv.ParseFloat(gold.HargaJual, 64)
 	if err != nil {
 		log.Printf("Warning: Gagal parse harga jual '%s': %v", gold.HargaJual, err)
-		return ""
+		return "", ""
 	}
 
 	priceBuyback, err := strconv.ParseFloat(gold.HargaBuyback, 64)
 	if err != nil {
 		log.Printf("Warning: Gagal parse harga buyback '%s': %v", gold.HargaBuyback, err)
-		return ""
+		return "", ""
 	}
 
-	return fmt.Sprintf("UPDATE public.%s\nSET price_buyback=%.1f, price_sell=%.0f\nWHERE \"date\"='%s' AND brand='%s' AND denom=%.1f;\n\n",
+	// INSERT query dengan ID manual (tidak pakai auto-increment)
+	insertQuery := fmt.Sprintf(
+		"INSERT INTO public.%s (id, \"date\", brand, denom, price_buyback, price_sell)\n"+
+			"SELECT %d, '%s', '%s', %.1f, %.1f, %.0f\n"+
+			"WHERE NOT EXISTS (\n"+
+			"  SELECT 1 FROM public.%s \n"+
+			"  WHERE \"date\"='%s' AND brand='%s' AND denom=%.1f\n"+
+			");\n\n",
+		tableName, insertID, today, brandSQL, denom, priceBuyback, priceSell,
+		tableName, today, brandSQL, denom)
+
+	// UPDATE query
+	updateQuery := fmt.Sprintf(
+		"UPDATE public.%s\n"+
+			"SET price_buyback=%.1f, price_sell=%.0f\n"+
+			"WHERE \"date\"='%s' AND brand='%s' AND denom=%.1f;\n\n",
 		tableName, priceBuyback, priceSell, today, brandSQL, denom)
+
+	return insertQuery, updateQuery
+}
+
+// loadEnv memuat environment variables dari file .env
+func loadEnv() {
+	envPath := "../scheduler/.env"
+	if err := godotenv.Load(envPath); err != nil {
+		log.Printf("⚠️  Tidak dapat memuat file .env: %v", err)
+		log.Printf("   Pastikan file %s sudah dibuat dan diisi", envPath)
+	}
+}
+
+// getLastID mengambil ID terakhir dari table gold_prices_v2 via helper script
+func getLastID(tableName string) (int64, error) {
+	cmd := exec.Command("go", "run", "get_last_id.go")
+	cmd.Dir = "../scheduler"
+	cmd.Env = append(os.Environ(), fmt.Sprintf("TABLE_NAME=%s", tableName))
+
+	output, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return 0, fmt.Errorf("gagal run get_last_id script: %v, stderr: %s", err, string(exitErr.Stderr))
+		}
+		return 0, fmt.Errorf("gagal run get_last_id script: %v", err)
+	}
+
+	var lastID int64
+	_, err = fmt.Sscanf(string(output), "%d", &lastID)
+	if err != nil {
+		return 0, fmt.Errorf("gagal parse last ID '%s': %v", string(output), err)
+	}
+
+	return lastID, nil
 }
 
 func main() {
 	startTime := time.Now()
 	fmt.Println("🚀 Memulai proses scraping...")
 	fmt.Printf("⏰ Waktu mulai: %s\n\n", startTime.Format(timeFormat))
+
+	loadEnv()
 
 	htmlContent := fetchHTML()
 	allBrandsData := parseHTML(htmlContent)
@@ -238,7 +314,7 @@ func main() {
 func fetchHTML() string {
 	fmt.Println("🔄 Memuat halaman dengan headless browser...")
 	stepStart := time.Now()
-	
+
 	htmlContent, err := fetchRenderedHTML(url)
 	if err != nil {
 		log.Fatalf("Gagal memuat URL dengan chromedp: %v", err)
@@ -251,14 +327,14 @@ func fetchHTML() string {
 func parseHTML(htmlContent string) []BrandData {
 	fmt.Println("\n🔄 Parsing HTML dan ekstraksi data...")
 	stepStart := time.Now()
-	
+
 	doc, err := htmlquery.Parse(strings.NewReader(htmlContent))
 	if err != nil {
 		log.Fatalf("Gagal parse HTML: %v", err)
 	}
 
 	allBrandsData := extractBrandsData(doc)
-	
+
 	fmt.Printf("✅ Parsing dan ekstraksi selesai (%.2f detik)\n", time.Since(stepStart).Seconds())
 	return allBrandsData
 }
@@ -298,14 +374,14 @@ func extractBrandData(nodes []*html.Node) []GoldData {
 func extractGoldData(node *html.Node) GoldData {
 	beratNode := htmlquery.FindOne(node, ".//div[contains(@class, 'col-span-1')]")
 	berat := strings.TrimSpace(htmlquery.InnerText(beratNode))
-	
+
 	hargaNodes := htmlquery.Find(node, ".//div[contains(@class, 'col-span-2')]")
-	
+
 	hargaJual := ""
 	if len(hargaNodes) >= 1 {
 		hargaJual = cleanPrice(htmlquery.InnerText(hargaNodes[0]))
 	}
-	
+
 	hargaBuyback := ""
 	if len(hargaNodes) >= 2 {
 		hargaBuyback = cleanPrice(htmlquery.InnerText(hargaNodes[1]))
@@ -325,7 +401,7 @@ func isValidGoldData(gold GoldData, allowedWeights []string) bool {
 
 	beratClean := strings.TrimSpace(strings.ToLower(gold.Berat))
 	for _, weight := range allowedWeights {
-		if strings.Contains(beratClean, weight+" gr") || 
+		if strings.Contains(beratClean, weight+" gr") ||
 			strings.Contains(beratClean, weight+" gram") ||
 			beratClean == weight+"gr" ||
 			beratClean == weight+" gr" ||
@@ -339,7 +415,7 @@ func isValidGoldData(gold GoldData, allowedWeights []string) bool {
 func saveJSON(allBrandsData []BrandData) {
 	fmt.Println("\n🔄 Menyimpan data ke JSON...")
 	stepStart := time.Now()
-	
+
 	jsonData, err := json.MarshalIndent(allBrandsData, "", "  ")
 	if err != nil {
 		log.Fatalf("Gagal meng-encode ke JSON: %v", err)
@@ -347,7 +423,7 @@ func saveJSON(allBrandsData []BrandData) {
 
 	sqlDir := getSQLDir()
 	os.MkdirAll(sqlDir, 0755)
-	
+
 	if err := os.WriteFile(getJSONPath(), jsonData, 0644); err != nil {
 		log.Fatalf("Gagal menulis ke file: %v", err)
 	}

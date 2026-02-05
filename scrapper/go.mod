@@ -18,6 +18,8 @@ require (
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
+	github.com/joho/godotenv v1.5.1 // indirect
+	github.com/lib/pq v1.11.1 // indirect
 	golang.org/x/net v0.39.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.24.0 // indirect
