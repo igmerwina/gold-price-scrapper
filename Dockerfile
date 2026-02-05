@@ -23,6 +23,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o scraper scrapper.
 
 WORKDIR /app/scheduler
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o execute_sql execute_sql.go
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o get_last_id get_last_id.go
 
 FROM alpine:latest
 
@@ -46,11 +47,12 @@ WORKDIR /app
 
 COPY --from=builder /app/scrapper/scraper ./scraper
 COPY --from=builder /app/scheduler/execute_sql ./execute_sql
+COPY --from=builder /app/scheduler/get_last_id ./get_last_id
 COPY run_scraper_docker.sh ./run_scraper.sh
 COPY test_cron.sh ./test_cron.sh
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 
 RUN mkdir -p logs sql && \
-    chmod +x run_scraper.sh test_cron.sh /docker-entrypoint.sh scraper execute_sql
+    chmod +x run_scraper.sh test_cron.sh /docker-entrypoint.sh scraper execute_sql get_last_id
 
 ENTRYPOINT ["/docker-entrypoint.sh"]

@@ -275,8 +275,24 @@ func loadEnv() {
 
 // getLastID mengambil ID terakhir dari table gold_prices_v2 via helper script
 func getLastID(tableName string) (int64, error) {
-	cmd := exec.Command("go", "run", "get_last_id.go")
-	cmd.Dir = "../scheduler"
+	// Check if get_last_id binary exists
+	// Try Docker path first (/app/get_last_id), then local path (../scheduler/get_last_id)
+	var cmd *exec.Cmd
+	dockerPath := "./get_last_id"
+	localPath := "../scheduler/get_last_id"
+	
+	if _, err := os.Stat(dockerPath); err == nil {
+		// Docker environment - binary in same directory
+		cmd = exec.Command(dockerPath)
+	} else if _, err := os.Stat(localPath); err == nil {
+		// Local environment - compiled binary exists
+		cmd = exec.Command(localPath)
+	} else {
+		// Local development - use go run
+		cmd = exec.Command("go", "run", "get_last_id.go")
+		cmd.Dir = "../scheduler"
+	}
+	
 	cmd.Env = append(os.Environ(), fmt.Sprintf("TABLE_NAME=%s", tableName))
 
 	output, err := cmd.Output()
