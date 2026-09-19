@@ -1,36 +1,115 @@
 # 🏅 Gold Price Scraper & Automation
 
-Automated scraper untuk mengambil harga emas dari [Galeri24.co.id](https://galeri24.co.id/harga-emas) dan update ke Supabase PostgreSQL.
+Scraper otomatis untuk mengambil harga emas dari [Galeri24.co.id](https://galeri24.co.id/harga-emas) dan menyimpannya ke Supabase PostgreSQL setiap hari.
 
-## ✨ Features
+## ✨ Fitur
 
-- 🤖 Auto scraping dengan headless browser (ChromeDP)
-- 📊 Support: Galeri24, Antam, UBS (0.5-100 gram)
-- 💾 Auto update ke Supabase PostgreSQL
-- ⏰ Configurable cron schedule via environment variables
-- 🐳 Docker & Dokploy ready
-- 📝 Auto logging & cleanup
+- 🤖 Scraping otomatis dengan headless browser (ChromeDP)
+- 📊 Mendukung 3 brand: Galeri24, Antam, UBS (0.5–100 gram)
+- 💾 Simpan otomatis ke Supabase PostgreSQL (pola upsert: INSERT jika belum ada, UPDATE jika sudah)
+- ⏰ Jadwal cron yang bisa diatur lewat environment variable
+- 🐳 Siap deploy di Docker, Dokploy, dan Render
+- 📝 Logging otomatis + pembersihan log lama
 
-## 🚀 Quick Start
+## 🔄 Cara Kerja
 
-### Prerequisites
+### Diagram Alur
 
-- Go 1.24+
-- Chromium/Chrome browser
-- Supabase account
+```mermaid
+flowchart TD
+    A["⏰ Cron / crond<br/>CRON_SCHEDULE, default 10 8 * * *"] --> B["run_scraper.sh"]
+    S["🚀 Container start<br/>RUN_ON_STARTUP=true"] --> B
 
-### Local Setup
+    B --> C["Step 1 — ./scraper"]
+    C --> D["Buka Chromium headless<br/>galeri24.co.id/harga-emas"]
+    D --> E["Parse HTML<br/>ambil berat, harga jual, buyback"]
+    E --> F["./get_last_id<br/>ambil ID terakhir dari tabel"]
+    F --> G["Tulis 2 file output"]
 
-```bash
-git clone https://github.com/yourusername/gold-scrapper.git
-cd gold-scrapper
+    G --> H["sql/harga_emas.json"]
+    G --> I["sql/update_gold_prices.sql<br/>INSERT ... WHERE NOT EXISTS<br/>+ UPDATE"]
 
-# Setup environment
-cp scheduler/.env.example scheduler/.env
-nano scheduler/.env  # Edit with your Supabase credentials
+    I --> J["Step 2 — ./execute_sql"]
+    J --> K["Koneksi ke Supabase<br/>PostgreSQL pooler"]
+    K --> L["Jalankan query<br/>data harga hari ini tersimpan"]
+
+    L --> M["📝 logs/scraper_YYYYMMDD_HHMMSS.log<br/>+ logs/cron.log"]
+
+    style A fill:#fff3cd
+    style S fill:#fff3cd
+    style L fill:#d4edda
+    style M fill:#e2e3e5
 ```
 
-**Database Setup:**
+### Penjelasan Tiap Tahap
+
+**1. Pemicu (trigger)**
+
+Ada dua jalur yang memanggil `run_scraper.sh`:
+
+- **Saat container start** — kalau `RUN_ON_STARTUP=true`, scraper langsung jalan sekali tanpa menunggu jadwal.
+- **Cron harian** — `crond` menjalankan sesuai `CRON_SCHEDULE` (default `10 8 * * *`, jam 08:10 WIB).
+
+`docker-entrypoint.sh` yang menyiapkan semuanya: menulis `.env` dari environment variable, memvalidasi format `CRON_SCHEDULE` (harus 5 field), lalu menyusun crontab.
+
+**2. Scraper (`scrapper/scrapper.go` → binary `./scraper`)**
+
+- Menjalankan Chromium headless lewat ChromeDP ke halaman harga Galeri24.
+- Parsing tabel HTML untuk tiap brand (Galeri24, Antam, UBS) → berat, harga jual, harga buyback.
+- Memanggil helper `./get_last_id` untuk tahu ID terakhir di tabel, supaya ID pada INSERT berurutan dan tidak bentrok.
+- Menghasilkan dua file di folder `sql/`:
+  - `harga_emas.json` — data mentah hasil scraping.
+  - `update_gold_prices.sql` — query siap eksekusi.
+
+**3. Pola upsert di SQL yang dihasilkan**
+
+Untuk setiap baris harga, scraper membuat dua query sekaligus:
+
+```sql
+-- INSERT hanya jalan kalau kombinasi (date, brand, denom) belum ada
+INSERT INTO public.gold_prices_v2 (id, "date", brand, denom, price_buyback, price_sell)
+SELECT 1234, '2025-11-07', 'Galeri24', 0.5, 842500.0, 892500
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.gold_prices_v2
+  WHERE "date"='2025-11-07' AND brand='Galeri24' AND denom=0.5
+);
+
+-- UPDATE menimpa harga kalau barisnya memang sudah ada
+UPDATE public.gold_prices_v2
+SET price_buyback=842500.0, price_sell=892500
+WHERE "date"='2025-11-07' AND brand='Galeri24' AND denom=0.5;
+```
+
+Efeknya: dijalankan sekali atau sepuluh kali di hari yang sama hasilnya tetap sama (idempoten), tidak ada baris duplikat.
+
+**4. Executor (`scheduler/execute_sql.go` → binary `./execute_sql`)**
+
+Membaca `sql/update_gold_prices.sql`, konek ke Supabase lewat connection pooler, lalu mengeksekusi semua query.
+
+**5. Logging**
+
+Tiap run menulis ke `logs/scraper_YYYYMMDD_HHMMSS.log`, dan output cron masuk ke `logs/cron.log`. Log lebih dari 30 hari dibersihkan otomatis.
+
+## 🚀 Mulai Cepat
+
+### Prasyarat
+
+- Go 1.24+
+- Chromium/Chrome
+- Akun Supabase
+
+### Setup Lokal
+
+```bash
+git clone https://github.com/igmerwina/gold-price-scrapper.git
+cd gold-scrapper
+
+# Siapkan environment
+cp scheduler/.env.example scheduler/.env
+nano scheduler/.env  # Isi kredensial Supabase
+```
+
+**Setup database:**
 ```sql
 CREATE TABLE public.gold_prices_v2 (
     id SERIAL PRIMARY KEY,
@@ -45,153 +124,154 @@ CREATE TABLE public.gold_prices_v2 (
 );
 ```
 
-**Environment Variables:**
+**Environment variable:**
 ```env
 SUPABASE_HOST=aws-1-ap-southeast-1.pooler.supabase.com
 SUPABASE_PORT=6543
 SUPABASE_USER=postgres.your-project-ref
 SUPABASE_PASSWORD=your-password
 SUPABASE_DB=postgres
+SUPABASE_SSL_MODE=require
 TABLE_NAME=gold_prices_v2
 CRON_SCHEDULE="10 8 * * *"
 ```
 
-### Run Manually
+### Jalankan Manual
 
 ```bash
-# Test scraper only
+# Tes scraper saja
 cd scrapper
 go run scrapper.go
 
-# Run full automation (scrape + update DB)
+# Jalankan alur penuh (scrape + update DB)
 cd scheduler
 bash run_scraper.sh
 ```
 
-## 🐳 Docker Deployment
+## 🐳 Deployment
 
-### Using Docker Compose
+### Docker Compose
 
 ```bash
-# Create .env file
 cp scheduler/.env.example .env
-nano .env  # Edit with your credentials
+nano .env  # Isi kredensial
 
-# Run
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop
-docker-compose down
+docker-compose up -d      # Jalankan
+docker-compose logs -f    # Lihat log
+docker-compose down       # Hentikan
 ```
 
-### Using Dokploy
+### Dokploy
 
-See [DEPLOY_DOKPLOY.md](DEPLOY_DOKPLOY.md) for complete deployment guide.
+1. Dokploy → Create Application
+2. Pilih tipe "Docker"
+3. Isi environment variable (SUPABASE_HOST, SUPABASE_PASSWORD, dll)
+4. Deploy dari GitHub/Docker Hub
 
-**Quick Deploy:**
-1. Go to Dokploy → Create Application
-2. Select "Docker" type
-3. Set environment variables (SUPABASE_HOST, SUPABASE_PASSWORD, etc.)
-4. Deploy from GitHub/Docker Hub
+### Render
 
-## 📋 Configuration
+Render **Web Service** mewajibkan ada port yang terbuka di `0.0.0.0`, padahal aplikasi ini murni cron worker tanpa HTTP server. Tanpa penanganan, deploy akan gagal dengan:
 
-### Change Cron Schedule
+```
+==> No open ports detected on 0.0.0.0, continuing to scan...
+==> Port scan timeout reached... Timed Out
+```
+
+Solusi yang dipakai: `docker-entrypoint.sh` menjalankan HTTP listener kecil (`busybox httpd`) di `$PORT` sebagai latar belakang, hanya supaya port scan Render lolos. Cron tetap berjalan seperti biasa di belakangnya.
+
+> Alternatif yang lebih tepat secara arsitektur adalah memakai **Background Worker** (tidak ada port scan sama sekali), tapi tipe itu tidak tersedia di free tier Render.
+
+Langkah deploy:
+1. Render → New → Web Service → hubungkan repo ini
+2. Runtime: Docker (otomatis membaca `Dockerfile`)
+3. Isi semua environment variable Supabase + `CRON_SCHEDULE`
+4. Deploy — port `$PORT` diisi otomatis oleh Render, tidak perlu diset manual
+
+## 📋 Konfigurasi
+
+### Ubah Jadwal Cron
 
 Edit `.env`:
 ```env
-CRON_SCHEDULE="10 8 * * *"      # Daily at 8:10 AM
-CRON_SCHEDULE="0 */4 * * *"     # Every 4 hours
-CRON_SCHEDULE="30 9,15 * * *"   # At 9:30 and 15:30
-CRON_SCHEDULE="0 8 * * 1-5"     # Mon-Fri at 8 AM
+CRON_SCHEDULE="10 8 * * *"      # Setiap hari jam 08:10
+CRON_SCHEDULE="0 */4 * * *"     # Setiap 4 jam
+CRON_SCHEDULE="30 9,15 * * *"   # Jam 09:30 dan 15:30
+CRON_SCHEDULE="0 8 * * 1-5"     # Senin–Jumat jam 08:00
 ```
 
-No restart needed in Docker - just update env var and container will reload.
+Format wajib 5 field, kalau salah container akan berhenti dengan pesan error yang jelas.
 
-### Change Table Name
+### Ubah Nama Tabel
 
-Edit `.env`:
 ```env
-TABLE_NAME=gold_prices_v2       # Production
+TABLE_NAME=gold_prices_v2       # Produksi
 TABLE_NAME=gold_prices_staging  # Staging
 TABLE_NAME=gold_prices_test     # Testing
 ```
 
-## 📁 Project Structure
+### Opsi Environment Lain
+
+| Variable | Default | Fungsi |
+|---|---|---|
+| `TZ` | `Asia/Jakarta` | Zona waktu container, memengaruhi jam cron |
+| `RUN_ON_STARTUP` | `true` | Jalankan scraper sekali saat container start |
+| `USE_LOOP_SCHEDULER` | `false` | Pakai `loop-scheduler.sh` sebagai ganti `crond` (untuk host yang bermasalah dengan `setpgid`) |
+| `PORT` | `10000` | Port dummy HTTP listener (diisi otomatis oleh Render) |
+
+## 📁 Struktur Proyek
 
 ```
 gold-scrapper/
 ├── scrapper/
-│   └── scrapper.go          # Scraper logic
+│   └── scrapper.go            # Logika scraping + generate SQL
 ├── scheduler/
-│   ├── execute_sql.go       # Database updater
-│   └── run_scraper.sh       # Main runner
-├── sql/                     # Output files
+│   ├── execute_sql.go         # Eksekusi SQL ke Supabase
+│   └── get_last_id.go         # Ambil ID terakhir dari tabel
+├── sql/                       # File hasil scraping
 │   ├── harga_emas.json
 │   └── update_gold_prices.sql
-├── Dockerfile               # Docker build
-├── docker-compose.yml       # Local Docker setup
-└── docker-entrypoint.sh     # Container startup
+├── logs/                      # Log tiap run
+├── Dockerfile                 # Build multi-stage
+├── docker-compose.yml         # Setup Docker lokal
+├── docker-entrypoint.sh       # Startup: .env, crontab, dummy HTTP listener
+├── run_scraper_docker.sh      # Runner utama (scrape → update DB)
+├── loop-scheduler.sh          # Scheduler alternatif tanpa cron
+└── test_cron.sh               # Cek cron benar-benar jalan
 ```
-
-## 🔄 How It Works
-
-1. **Scraper** (`scrapper.go`):
-   - Launch headless Chrome
-   - Scrape Galeri24.co.id
-   - Parse HTML → Extract prices
-   - Generate JSON & SQL files
-
-2. **Executor** (`execute_sql.go`):
-   - Read generated SQL
-   - Connect to Supabase
-   - Execute UPDATE queries
-
-3. **Automation**:
-   - Cron triggers `run_scraper.sh`
-   - Runs scraper + executor
-   - Logs to `logs/scraper_*.log`
-   - Auto cleanup old logs (30+ days)
 
 ## 🐛 Troubleshooting
 
-**Container not running?**
+**Container tidak jalan?**
 ```bash
 docker-compose logs -f
 docker exec -it gold-scraper sh
 ```
 
-**No SQL file generated?**
+**File SQL tidak dihasilkan?**
 ```bash
-# Check if scraper ran
 docker exec -it gold-scraper ls -la /app/sql/
-
-# Run manually
-docker exec -it gold-scraper ./scraper
+docker exec -it gold-scraper ./scraper    # Jalankan manual
 ```
 
-**Database connection failed?**
+**Koneksi database gagal?**
 ```bash
-# Check env vars
 docker exec -it gold-scraper env | grep SUPABASE
-
-# Test connection
 docker exec -it gold-scraper ./execute_sql
 ```
 
-**Cron not running?**
+**Cron tidak jalan?**
 ```bash
-# Check cron config
 docker exec -it gold-scraper crontab -l
-
-# Check cron logs
 docker exec -it gold-scraper tail -f /app/logs/cron.log
 ```
 
-## 📊 Output Files
+Kalau muncul error `setpgid` dari `crond`, set `USE_LOOP_SCHEDULER=true` untuk memakai scheduler berbasis loop.
+
+**Deploy Render timeout "No open ports detected"?**
+
+Pastikan `busybox-extras` terpasang di `Dockerfile` (applet `httpd` tidak ikut di busybox bawaan Alpine) dan `docker-entrypoint.sh` menjalankan listener di `0.0.0.0:$PORT`.
+
+## 📊 File Output
 
 **JSON** (`sql/harga_emas.json`):
 ```json
@@ -209,26 +289,21 @@ docker exec -it gold-scraper tail -f /app/logs/cron.log
 ]
 ```
 
-**SQL** (`sql/update_gold_prices.sql`):
-```sql
-UPDATE public.gold_prices_v2
-SET price_buyback=842500.0, price_sell=892500
-WHERE "date"='2025-11-07' AND brand='Galeri24' AND denom=0.5;
-```
+**SQL** (`sql/update_gold_prices.sql`) — lihat contoh pola upsert di bagian [Cara Kerja](#-cara-kerja).
 
-## 📈 Performance
+## 📈 Performa
 
-- Scraping: ~10-12s
-- SQL execution: ~1-2s
-- Total runtime: ~15s
+- Scraping: ~10–12 detik
+- Eksekusi SQL: ~1–2 detik
+- Total: ~15 detik per run
 
-## 🔐 Security
+## 🔐 Keamanan
 
-- Never commit `.env` file
-- Use connection pooler (port 6543)
-- Enable SSL mode: `SUPABASE_SSL_MODE=require`
+- Jangan pernah commit file `.env`
+- Pakai connection pooler (port 6543)
+- Aktifkan SSL: `SUPABASE_SSL_MODE=require`
 
-## 📄 License
+## 📄 Lisensi
 
 MIT License
 
@@ -238,4 +313,4 @@ MIT License
 
 ---
 
-⭐ Star if helpful!
+⭐ Star kalau membantu!
