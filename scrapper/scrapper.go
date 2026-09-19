@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -144,38 +143,27 @@ func fetchRenderedHTML(url string) (string, error) {
 	return htmlContent, nil
 }
 
-// generateSQL membuat SQL INSERT/UPDATE queries dari data JSON
+// generateSQL membuat SQL upsert queries dari data JSON
 func generateSQL(allBrandsData []BrandData) error {
 	today := time.Now().Format(dateFormat)
 	generatedTime := time.Now().Format(timeFormat)
 
 	tableName := getTableName()
-	fmt.Println("\n🔄 Membuat SQL INSERT/UPDATE queries...")
+	fmt.Println("\n🔄 Membuat SQL upsert queries...")
 	fmt.Printf("📊 Target table: %s\n", tableName)
 
-	// Query last ID dari database via helper script
-	fmt.Println("🔍 Mengambil last ID dari database...")
-	lastID, err := getLastID(tableName)
-	if err != nil {
-		log.Printf("⚠️  Gagal mendapatkan last ID: %v. Menggunakan nilai default 0", err)
-		lastID = 0
-	}
-	fmt.Printf("✅ Last ID dari database: %d\n", lastID)
+	sqlContent := fmt.Sprintf("-- SQL Upsert Queries untuk Gold Prices\n-- Generated on: %s\n\n", generatedTime)
 
-	sqlContent := fmt.Sprintf("-- SQL INSERT/UPDATE Queries untuk Gold Prices\n-- Generated on: %s\n\n", generatedTime)
-	sqlContent += fmt.Sprintf("-- Last ID: %d, Next INSERT akan dimulai dari ID %d\n\n", lastID, lastID+1)
+	count := buildUpsertQueries(&sqlContent, allBrandsData, tableName, today)
 
-	insertCount, updateCount := buildSQLQueriesWithInsert(&sqlContent, allBrandsData, tableName, today, lastID)
-
-	sqlContent += fmt.Sprintf("\n-- Total %d INSERT queries, %d UPDATE queries generated successfully\n", insertCount, updateCount)
+	sqlContent += fmt.Sprintf("\n-- Total %d upsert queries generated successfully\n", count)
 
 	if err := os.WriteFile(getSQLPath(), []byte(sqlContent), 0644); err != nil {
 		return fmt.Errorf("gagal menulis SQL file: %v", err)
 	}
 
 	fmt.Printf("✅ SQL queries berhasil dibuat dan disimpan ke %s\n", getSQLPath())
-	fmt.Printf("   📊 INSERT: %d | UPDATE: %d queries\n", insertCount, updateCount)
-	fmt.Printf("   🔢 INSERT ID range: %d - %d\n", lastID+1, lastID+int64(insertCount))
+	fmt.Printf("   📊 Upsert: %d queries (tanggal %s)\n", count, today)
 	return nil
 }
 
@@ -187,28 +175,19 @@ func getTableName() string {
 	return tableName
 }
 
-func buildSQLQueriesWithInsert(sqlContent *string, allBrandsData []BrandData, tableName, today string, lastID int64) (int, int) {
-	insertCount := 0
-	updateCount := 0
-	currentID := lastID + 1
+func buildUpsertQueries(sqlContent *string, allBrandsData []BrandData, tableName, today string) int {
+	count := 0
 
 	for _, brandData := range allBrandsData {
 		brandSQL := normalizeBrandName(brandData.Brand)
 		for _, gold := range brandData.Data {
-			insertQuery, updateQuery := buildInsertAndUpdateQueries(gold, tableName, today, brandSQL, currentID)
-
-			if insertQuery != "" {
-				*sqlContent += insertQuery
-				insertCount++
-				currentID++ // Increment ID untuk INSERT berikutnya
-			}
-			if updateQuery != "" {
-				*sqlContent += updateQuery
-				updateCount++
+			if query := buildUpsertQuery(gold, tableName, today, brandSQL); query != "" {
+				*sqlContent += query
+				count++
 			}
 		}
 	}
-	return insertCount, updateCount
+	return count
 }
 
 func normalizeBrandName(brand string) string {
@@ -224,44 +203,32 @@ func normalizeBrandName(brand string) string {
 	}
 }
 
-func buildInsertAndUpdateQueries(gold GoldData, tableName, today, brandSQL string, insertID int64) (string, string) {
+func buildUpsertQuery(gold GoldData, tableName, today, brandSQL string) string {
 	denom, err := strconv.ParseFloat(gold.Berat, 64)
 	if err != nil {
 		log.Printf("Warning: Gagal parse berat '%s': %v", gold.Berat, err)
-		return "", ""
+		return ""
 	}
 
 	priceSell, err := strconv.ParseFloat(gold.HargaJual, 64)
 	if err != nil {
 		log.Printf("Warning: Gagal parse harga jual '%s': %v", gold.HargaJual, err)
-		return "", ""
+		return ""
 	}
 
 	priceBuyback, err := strconv.ParseFloat(gold.HargaBuyback, 64)
 	if err != nil {
 		log.Printf("Warning: Gagal parse harga buyback '%s': %v", gold.HargaBuyback, err)
-		return "", ""
+		return ""
 	}
 
-	// INSERT query dengan ID manual (tidak pakai auto-increment)
-	insertQuery := fmt.Sprintf(
-		"INSERT INTO public.%s (id, \"date\", brand, denom, price_buyback, price_sell)\n"+
-			"SELECT %d, '%s', '%s', %.1f, %.1f, %.0f\n"+
-			"WHERE NOT EXISTS (\n"+
-			"  SELECT 1 FROM public.%s \n"+
-			"  WHERE \"date\"='%s' AND brand='%s' AND denom=%.1f\n"+
-			");\n\n",
-		tableName, insertID, today, brandSQL, denom, priceBuyback, priceSell,
-		tableName, today, brandSQL, denom)
-
-	// UPDATE query
-	updateQuery := fmt.Sprintf(
-		"UPDATE public.%s\n"+
-			"SET price_buyback=%.1f, price_sell=%.0f\n"+
-			"WHERE \"date\"='%s' AND brand='%s' AND denom=%.1f;\n\n",
-		tableName, priceBuyback, priceSell, today, brandSQL, denom)
-
-	return insertQuery, updateQuery
+	// id diisi sequence SERIAL; baris dengan tanggal+brand+denom yang sama ditimpa harganya
+	return fmt.Sprintf(
+		"INSERT INTO public.%s (\"date\", brand, denom, price_buyback, price_sell)\n"+
+			"VALUES ('%s', '%s', %.1f, %.1f, %.0f)\n"+
+			"ON CONFLICT (\"date\", brand, denom) DO UPDATE\n"+
+			"SET price_buyback=EXCLUDED.price_buyback, price_sell=EXCLUDED.price_sell;\n\n",
+		tableName, today, brandSQL, denom, priceBuyback, priceSell)
 }
 
 // loadEnv memuat environment variables dari file .env
@@ -271,45 +238,6 @@ func loadEnv() {
 		log.Printf("⚠️  Tidak dapat memuat file .env: %v", err)
 		log.Printf("   Pastikan file %s sudah dibuat dan diisi", envPath)
 	}
-}
-
-// getLastID mengambil ID terakhir dari table gold_prices_v2 via helper script
-func getLastID(tableName string) (int64, error) {
-	// Check if get_last_id binary exists
-	// Try Docker path first (/app/get_last_id), then local path (../scheduler/get_last_id)
-	var cmd *exec.Cmd
-	dockerPath := "./get_last_id"
-	localPath := "../scheduler/get_last_id"
-	
-	if _, err := os.Stat(dockerPath); err == nil {
-		// Docker environment - binary in same directory
-		cmd = exec.Command(dockerPath)
-	} else if _, err := os.Stat(localPath); err == nil {
-		// Local environment - compiled binary exists
-		cmd = exec.Command(localPath)
-	} else {
-		// Local development - use go run
-		cmd = exec.Command("go", "run", "get_last_id.go")
-		cmd.Dir = "../scheduler"
-	}
-	
-	cmd.Env = append(os.Environ(), fmt.Sprintf("TABLE_NAME=%s", tableName))
-
-	output, err := cmd.Output()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return 0, fmt.Errorf("gagal run get_last_id script: %v, stderr: %s", err, string(exitErr.Stderr))
-		}
-		return 0, fmt.Errorf("gagal run get_last_id script: %v", err)
-	}
-
-	var lastID int64
-	_, err = fmt.Sscanf(string(output), "%d", &lastID)
-	if err != nil {
-		return 0, fmt.Errorf("gagal parse last ID '%s': %v", string(output), err)
-	}
-
-	return lastID, nil
 }
 
 func main() {

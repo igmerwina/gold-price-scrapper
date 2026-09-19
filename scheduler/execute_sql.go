@@ -94,31 +94,40 @@ func connectSupabase(config SupabaseConfig) (*sql.DB, error) {
 	return db, nil
 }
 
-func executeSQLFile(db *sql.DB, filename string) (int, int, error) {
+// stripComments membuang baris komentar dari satu potongan statement.
+// Tanpa ini komentar header menempel pada query pertama dan query itu ikut terbuang.
+func stripComments(stmt string) string {
+	var kept []string
+	for _, line := range strings.Split(stmt, "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "--") {
+			kept = append(kept, line)
+		}
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
+}
+
+func parseStatements(content string) []string {
+	var statements []string
+	for _, chunk := range strings.Split(content, ";") {
+		stmt := stripComments(chunk)
+		if strings.Contains(strings.ToUpper(stmt), "INSERT") {
+			statements = append(statements, stmt)
+		}
+	}
+	return statements
+}
+
+func executeSQLFile(db *sql.DB, filename string) (int, error) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
-		return 0, 0, fmt.Errorf("gagal membaca file %s: %v", filename, err)
+		return 0, fmt.Errorf("gagal membaca file %s: %v", filename, err)
 	}
 
-	statements := strings.Split(string(content), ";")
-	insertCount := 0
-	updateCount := 0
+	statements := parseStatements(string(content))
+	executed := 0
 	failedCount := 0
 
 	for i, stmt := range statements {
-		stmt = strings.TrimSpace(stmt)
-
-		if stmt == "" || strings.HasPrefix(stmt, "--") {
-			continue
-		}
-
-		isInsert := strings.Contains(strings.ToUpper(stmt), "INSERT")
-		isUpdate := strings.Contains(strings.ToUpper(stmt), "UPDATE")
-
-		if !isInsert && !isUpdate {
-			continue
-		}
-
 		if _, err := db.Exec(stmt); err != nil {
 			log.Printf("⚠️  Error executing statement %d: %v", i+1, err)
 			log.Printf("Statement: %s", stmt[:min(len(stmt), 100)])
@@ -126,23 +135,18 @@ func executeSQLFile(db *sql.DB, filename string) (int, int, error) {
 			continue
 		}
 
-		if isInsert {
-			insertCount++
-		} else if isUpdate {
-			updateCount++
-		}
+		executed++
 
-		if (insertCount+updateCount)%10 == 0 {
-			fmt.Printf("   Progress: %d queries executed (INSERT: %d, UPDATE: %d)...\n",
-				insertCount+updateCount, insertCount, updateCount)
+		if executed%10 == 0 {
+			fmt.Printf("   Progress: %d queries executed...\n", executed)
 		}
 	}
 
 	if failedCount > 0 {
-		return insertCount, updateCount, fmt.Errorf("%d queries failed", failedCount)
+		return executed, fmt.Errorf("%d queries failed", failedCount)
 	}
 
-	return insertCount, updateCount, nil
+	return executed, nil
 }
 
 func min(a, b int) int {
@@ -190,22 +194,23 @@ func main() {
 
 	fmt.Printf("\n📝 Mengeksekusi file: %s\n", sqlFile)
 
-	insertCount, updateCount, err := executeSQLFile(db, sqlFile)
+	executed, err := executeSQLFile(db, sqlFile)
 
 	duration := time.Since(startTime)
 
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	if err != nil {
-		fmt.Printf("⚠️  Selesai dengan error: %v\n", err)
-		fmt.Printf("✅ Berhasil - INSERT: %d | UPDATE: %d\n", insertCount, updateCount)
+		fmt.Printf("❌ Selesai dengan error: %v\n", err)
+		fmt.Printf("   Berhasil dieksekusi: %d queries\n", executed)
 	} else {
 		fmt.Println("✅ EKSEKUSI BERHASIL!")
-		fmt.Printf("📊 Total queries dieksekusi:\n")
-		fmt.Printf("   - INSERT: %d queries\n", insertCount)
-		fmt.Printf("   - UPDATE: %d queries\n", updateCount)
-		fmt.Printf("   - Total: %d queries\n", insertCount+updateCount)
+		fmt.Printf("📊 Total upsert dieksekusi: %d queries\n", executed)
 	}
 	fmt.Printf("⏱️  Waktu eksekusi: %.2f detik\n", duration.Seconds())
 	fmt.Printf("⏰ Selesai: %s\n", time.Now().Format("2006-01-02 15:04:05"))
 	fmt.Println(strings.Repeat("=", 60))
+
+	if err != nil {
+		os.Exit(1)
+	}
 }

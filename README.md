@@ -23,11 +23,10 @@ flowchart TD
     B --> C["Step 1 — ./scraper"]
     C --> D["Buka Chromium headless<br/>galeri24.co.id/harga-emas"]
     D --> E["Parse HTML<br/>ambil berat, harga jual, buyback"]
-    E --> F["./get_last_id<br/>ambil ID terakhir dari tabel"]
-    F --> G["Tulis 2 file output"]
+    E --> G["Tulis 2 file output"]
 
     G --> H["sql/harga_emas.json"]
-    G --> I["sql/update_gold_prices.sql<br/>INSERT ... WHERE NOT EXISTS<br/>+ UPDATE"]
+    G --> I["sql/update_gold_prices.sql<br/>INSERT ... ON CONFLICT DO UPDATE"]
 
     I --> J["Step 2 — ./execute_sql"]
     J --> K["Koneksi ke Supabase<br/>PostgreSQL pooler"]
@@ -56,31 +55,33 @@ Ada dua jalur yang memanggil `run_scraper.sh`:
 
 - Menjalankan Chromium headless lewat ChromeDP ke halaman harga Galeri24.
 - Parsing tabel HTML untuk tiap brand (Galeri24, Antam, UBS) → berat, harga jual, harga buyback.
-- Memanggil helper `./get_last_id` untuk tahu ID terakhir di tabel, supaya ID pada INSERT berurutan dan tidak bentrok.
 - Menghasilkan dua file di folder `sql/`:
   - `harga_emas.json` — data mentah hasil scraping.
   - `update_gold_prices.sql` — query siap eksekusi.
 
 **3. Pola upsert di SQL yang dihasilkan**
 
-Untuk setiap baris harga, scraper membuat dua query sekaligus:
+Satu query per baris harga:
 
 ```sql
--- INSERT hanya jalan kalau kombinasi (date, brand, denom) belum ada
-INSERT INTO public.gold_prices_v2 (id, "date", brand, denom, price_buyback, price_sell)
-SELECT 1234, '2025-11-07', 'Galeri24', 0.5, 842500.0, 892500
-WHERE NOT EXISTS (
-  SELECT 1 FROM public.gold_prices_v2
-  WHERE "date"='2025-11-07' AND brand='Galeri24' AND denom=0.5
-);
-
--- UPDATE menimpa harga kalau barisnya memang sudah ada
-UPDATE public.gold_prices_v2
-SET price_buyback=842500.0, price_sell=892500
-WHERE "date"='2025-11-07' AND brand='Galeri24' AND denom=0.5;
+INSERT INTO public.gold_prices_v2 ("date", brand, denom, price_buyback, price_sell)
+VALUES ('2026-09-19', 'Galeri24', 0.5, 1220000.0, 1356000)
+ON CONFLICT ("date", brand, denom) DO UPDATE
+SET price_buyback=EXCLUDED.price_buyback, price_sell=EXCLUDED.price_sell;
 ```
 
+Kolom `id` sengaja tidak diisi — biar sequence `SERIAL` yang menentukan, jadi tidak pernah ada bentrok primary key. Constraint `UNIQUE(date, brand, denom)` yang memutuskan: tanggal+brand+denom belum ada → baris baru; sudah ada → harganya ditimpa.
+
 Efeknya: dijalankan sekali atau sepuluh kali di hari yang sama hasilnya tetap sama (idempoten), tidak ada baris duplikat.
+
+> ⚠️ **Sekali saja, kalau tabel kamu sebelumnya diisi dengan `id` manual:** sequence-nya kemungkinan tertinggal jauh di belakang `MAX(id)`. Jalankan ini di Supabase SQL editor supaya `SERIAL` melanjutkan dari ID terakhir:
+>
+> ```sql
+> SELECT setval(
+>   pg_get_serial_sequence('public.gold_prices_v2','id'),
+>   (SELECT MAX(id) FROM public.gold_prices_v2)
+> );
+> ```
 
 **4. Executor (`scheduler/execute_sql.go` → binary `./execute_sql`)**
 
@@ -259,8 +260,7 @@ gold-scrapper/
 ├── scrapper/
 │   └── scrapper.go            # Logika scraping + generate SQL
 ├── scheduler/
-│   ├── execute_sql.go         # Eksekusi SQL ke Supabase
-│   └── get_last_id.go         # Ambil ID terakhir dari tabel
+│   └── execute_sql.go         # Eksekusi SQL ke Supabase
 ├── sql/                       # File hasil scraping
 │   ├── harga_emas.json
 │   └── update_gold_prices.sql
@@ -323,7 +323,7 @@ Pastikan `busybox-extras` terpasang di `Dockerfile` (applet `httpd` tidak ikut d
 ]
 ```
 
-**SQL** (`sql/update_gold_prices.sql`) — lihat contoh pola upsert di bagian [Cara Kerja](#-cara-kerja).
+**SQL** (`sql/update_gold_prices.sql`) — lihat contoh pola upsert di bagian [Cara Kerja](#-cara-kerja). Satu file berisi 24 query upsert (8 denominasi × 3 brand).
 
 ## 📈 Performa
 

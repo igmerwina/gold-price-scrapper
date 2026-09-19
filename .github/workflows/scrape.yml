@@ -29,11 +29,9 @@ jobs:
             scrapper/go.sum
             scheduler/go.sum
 
-      - name: Build helpers
+      - name: Build executor
         working-directory: scheduler
-        run: |
-          go build -o get_last_id get_last_id.go
-          go build -o execute_sql execute_sql.go
+        run: go build -o execute_sql execute_sql.go
 
       - name: Scrape
         working-directory: scrapper
