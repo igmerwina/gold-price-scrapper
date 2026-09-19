@@ -104,6 +104,13 @@ fi
 
 echo "=========================================="
 
+# Dummy HTTP listener so Render's port scan passes (this is a cron worker, not a web app)
+PORT=${PORT:-10000}
+mkdir -p /app/www
+echo "OK" > /app/www/index.html
+httpd -f -p "0.0.0.0:${PORT}" -h /app/www &
+echo "🌐 Dummy HTTP listener on 0.0.0.0:${PORT}"
+
 # Check if should use loop scheduler (for setpgid error fix)
 if [ "${USE_LOOP_SCHEDULER}" = "true" ]; then
     echo "🔄 Using loop-based scheduler (no cron)"
