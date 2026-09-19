@@ -29,6 +29,7 @@ FROM alpine:latest
 
 RUN apk add --no-cache \
     bash \
+    busybox-extras \
     ca-certificates \
     chromium \
     chromium-chromedriver \
