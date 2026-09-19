@@ -1,0 +1,52 @@
+name: Scrape Gold Prices
+
+on:
+  schedule:
+    # 01:10 UTC = 08:10 WIB
+    - cron: "10 1 * * *"
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Jakarta
+      SUPABASE_HOST: ${{ secrets.SUPABASE_HOST }}
+      SUPABASE_PORT: ${{ secrets.SUPABASE_PORT }}
+      SUPABASE_USER: ${{ secrets.SUPABASE_USER }}
+      SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+      SUPABASE_DB: ${{ secrets.SUPABASE_DB }}
+      SUPABASE_SSL_MODE: require
+      TABLE_NAME: gold_prices_v2
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: |
+            scrapper/go.sum
+            scheduler/go.sum
+
+      - name: Build helpers
+        working-directory: scheduler
+        run: |
+          go build -o get_last_id get_last_id.go
+          go build -o execute_sql execute_sql.go
+
+      - name: Scrape
+        working-directory: scrapper
+        run: go run scrapper.go
+
+      - name: Update database
+        working-directory: scheduler
+        run: ./execute_sql
+
+      - name: Upload output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sql-output
+          path: sql/
+          retention-days: 7

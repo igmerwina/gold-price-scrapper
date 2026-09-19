@@ -148,7 +148,39 @@ cd scheduler
 bash run_scraper.sh
 ```
 
-## 🐳 Deployment
+## 🚢 Deployment
+
+Ada dua pendekatan berbeda, pilih salah satu:
+
+| | GitHub Actions (disarankan) | Docker / Dokploy / Render |
+|---|---|---|
+| Model | Runner nyala ~2 menit saat jadwal, lalu mati | Container nyala 24/7, cron di dalamnya |
+| Perlu server? | Tidak | Ya |
+| Biaya | Gratis | Gratis–$7/bln tergantung platform |
+| Cocok untuk | Jadwal harian seperti proyek ini | Kalau butuh kontrol penuh / self-host |
+
+### GitHub Actions
+
+Karena aplikasi ini sebenarnya cuma cron job, tidak perlu server yang menyala terus. Workflow `.github/workflows/scrape.yml` menjalankan seluruh alur di runner GitHub setiap jam 08:10 WIB (`10 1 * * *` UTC).
+
+**Setup:**
+
+1. Repo → Settings → Secrets and variables → Actions → New repository secret
+2. Tambahkan secret berikut:
+
+   | Secret | Contoh |
+   |---|---|
+   | `SUPABASE_HOST` | `aws-1-ap-southeast-1.pooler.supabase.com` |
+   | `SUPABASE_PORT` | `6543` |
+   | `SUPABASE_USER` | `postgres.your-project-ref` |
+   | `SUPABASE_PASSWORD` | `your-password` |
+   | `SUPABASE_DB` | `postgres` |
+
+3. Tab **Actions** → **Scrape Gold Prices** → **Run workflow** untuk uji coba manual.
+
+File `sql/harga_emas.json` dan `sql/update_gold_prices.sql` hasil tiap run diunggah sebagai artifact (disimpan 7 hari) untuk memudahkan debugging.
+
+> ⚠️ **Catatan:** GitHub menonaktifkan scheduled workflow otomatis kalau repo tidak ada aktivitas selama 60 hari. Cukup jalankan workflow manual atau push commit untuk mengaktifkannya lagi. Jadwal juga bisa telat 5–15 menit saat runner GitHub sedang ramai.
 
 ### Docker Compose
 
@@ -179,7 +211,7 @@ Render **Web Service** mewajibkan ada port yang terbuka di `0.0.0.0`, padahal ap
 
 Solusi yang dipakai: `docker-entrypoint.sh` menjalankan HTTP listener kecil (`busybox httpd`) di `$PORT` sebagai latar belakang, hanya supaya port scan Render lolos. Cron tetap berjalan seperti biasa di belakangnya.
 
-> Alternatif yang lebih tepat secara arsitektur adalah memakai **Background Worker** (tidak ada port scan sama sekali), tapi tipe itu tidak tersedia di free tier Render.
+> ⚠️ **Free tier Render tidak cocok untuk cron.** Web Service gratis di-*spin down* setelah ~15 menit tanpa traffic HTTP masuk — container mati, `crond` ikut mati, dan jadwal harian tidak pernah jalan. Dummy listener hanya membuat deploy lolos, bukan membuat container tetap hidup. Supaya cron benar-benar jalan: pakai **GitHub Actions** (gratis), atau naik ke plan **Starter** yang tidak spin down. Opsi **Background Worker** lebih tepat secara arsitektur tapi tidak tersedia di free tier.
 
 Langkah deploy:
 1. Render → New → Web Service → hubungkan repo ini
@@ -222,6 +254,8 @@ TABLE_NAME=gold_prices_test     # Testing
 
 ```
 gold-scrapper/
+├── .github/workflows/
+│   └── scrape.yml             # Jadwal harian via GitHub Actions
 ├── scrapper/
 │   └── scrapper.go            # Logika scraping + generate SQL
 ├── scheduler/
